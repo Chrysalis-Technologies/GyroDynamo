@@ -42,13 +42,8 @@ class Ring:
         self.idx = idx
         self.radius = base_radius * (1.0 - 0.1*idx)
         self.thickness = thickness
-        # Distinct axis per ring (golden-step distribution)
-        phi = (idx+1) * 1.61803398875
-        theta = (idx+1) * 0.942477796
-        ax = math.sin(theta)*math.cos(phi)
-        ay = math.cos(theta)
-        az = math.sin(theta)*math.sin(phi)
-        self.axis = norm((ax, ay, az))
+        # Start all rings with a common axis so they remain concentric
+        self.axis = norm((0.0, 0.0, 1.0))
         self.spin = 0.0
         self.theta = 0.0
         self.prec_axis = norm((0.0, 1.0, 0.0))
@@ -114,8 +109,7 @@ class ResonanceController:
                 rings[k].set_spin((p/float(q))*self.base_omega)
         omega_prec = self.prec_ratio * self.beat_omega
         for k in range(n):
-            sgn = 1.0 if (k%2==0) else -1.0
-            rings[k].set_precession(sgn * omega_prec)
+            rings[k].set_precession(omega_prec)
 
 class ControlPanel(ui.View):
     def __init__(self, controller, on_change, **kwargs):
@@ -227,14 +221,21 @@ class GyroScene(scene.Scene):
         self.controller = ResonanceController()
         self.running = True
 
+        # Width reserved for the control panel on the left
+        self.panel_width = 180
+
+        # Create rings sized to the remaining display area
+        avail_w = self.size.w - self.panel_width
+        base_radius = min(avail_w, self.size.h) * 0.42
         self.rings = []
-        base_radius = min(self.size.w, self.size.h)*0.42
         for i in range(MAX_RINGS):
             self.rings.append(Ring(i, base_radius, thickness=2.0))
 
         self.controller.configure(self.rings)
 
-        self.panel = ControlPanel(self.controller, self.on_controls_changed, frame=(0,0,180,self.size.h))
+        # Add control panel after rings so its width is known
+        self.panel = ControlPanel(self.controller, self.on_controls_changed,
+                                   frame=(0,0,self.panel_width,self.size.h))
         self.panel.flex = 'H'
         self.view.add_subview(self.panel)
 
@@ -289,7 +290,8 @@ class GyroScene(scene.Scene):
             self.bpm_badge.bg_color = (0.7,0.9,1.0,0.15)
 
     def draw(self):
-        w,h = self.size.w, self.size.h
+        w_total, h = self.size.w, self.size.h
+        w = w_total - self.panel_width
         n = self.controller.num_rings
         for i in range(n):
             r = self.rings[i]
@@ -298,6 +300,7 @@ class GyroScene(scene.Scene):
             first = True
             for p in pts3:
                 x,y = project(p, w, h, scale=1.0)
+                x += self.panel_width  # center within remaining space
                 if first:
                     path.move_to(x,y); first = False
                 else:
