@@ -94,14 +94,25 @@ class TumblingGyroGradient(Scene):
         if RING_COUNT > 1:
             spacing = min(SPACING_TARGET, max(0.0, (max_outer - base_r)) / (RING_COUNT - 1))
 
+        axes = [
+            norm((1.0, 0.2, 0.0)),
+            norm((0.0, 1.0, 0.25)),
+            norm((0.35, 0.25, 1.0)),
+            norm((1.0, 1.0, 0.0)),
+            norm((0.0, 1.0, 1.0)),
+            norm((1.0, 0.0, 1.0)),
+            norm((0.5, 0.8, 0.25)),
+        ]
+
         self.rings = []
         for i in range(RING_COUNT):
             r = base_r + i * spacing
+            axis = axes[i % len(axes)]
             color = PALETTE[i % len(PALETTE)]
             omega = (0.6 + 0.25 * i) * (1 if i % 2 == 0 else -1)
             self.rings.append({
                 'radius': r,
-                'axis': (0.0, 0.0, 1.0),
+                'axis': axis,
                 'angle': 0.0,
                 'omega': omega,
                 'color': color,
