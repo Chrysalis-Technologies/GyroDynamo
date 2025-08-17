@@ -293,22 +293,24 @@ class GyroScene(scene.Scene):
         w_total, h = self.size.w, self.size.h
         w = w_total - self.panel_width
         n = self.controller.num_rings
+
+        # clear frame
+        scene.background(0.05, 0.07, 0.10)
+
         for i in range(n):
             r = self.rings[i]
             pts3 = ring_points(r.axis, r.theta, r.radius, npts=220)
-            path = ui.Path()
-            first = True
+            pts2 = []
             for p in pts3:
-                x,y = project(p, w, h, scale=1.0)
-                x += self.panel_width  # center within remaining space
-                if first:
-                    path.move_to(x,y); first = False
-                else:
-                    path.line_to(x,y)
-            path.close()
-            ui.set_color(self.palette[i])
-            path.line_width = 2.0
-            path.stroke()
+                x, y = project(p, w, h, scale=1.0)
+                pts2.append((x + self.panel_width, y))
+
+            scene.stroke(*self.palette[i])
+            scene.stroke_weight(2.0)
+            for j in range(len(pts2)):
+                x0, y0 = pts2[j]
+                x1, y1 = pts2[(j + 1) % len(pts2)]
+                scene.line(x0, y0, x1, y1)
 
 if __name__ == '__main__':
     scene.run(GyroScene(), multi_touch=False, show_fps=False)
