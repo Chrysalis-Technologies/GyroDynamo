@@ -20,6 +20,15 @@ RATIO_LIST = [
     (1,1),(3,2),(2,1),(5,2),(5,3),(7,4),(8,5),(13,8)
 ]
 
+# Near-rational approximations of irrational numbers for quasi mode
+QUASI_LIST = [
+    (34, 21),   # φ ≈ 1.6190
+    (99, 70),   # √2 ≈ 1.4143
+    (97, 56),   # √3 ≈ 1.7321
+    (193, 71),  # e  ≈ 2.7183
+    (355, 226)  # π/2 ≈ 1.5708
+]
+
 def norm(v):
     x,y,z = v
     m = (x*x+y*y+z*z)**0.5
@@ -84,13 +93,14 @@ def ring_points(axis, phase, radius, npts=160):
 
 class ResonanceController:
     def __init__(self):
-        self.mode = 'beat'  # 'beat' or 'ratio'
+        self.mode = 'beat'  # 'beat', 'ratio', or 'quasi'
         self.base_rpm = DEFAULT_BASE_RPM
         self.bpm = DEFAULT_BPM
         self.prec_ratio = DEFAULT_PREC_RATIO
         self.num_rings = DEFAULT_NUM_RINGS
         self.n_offsets = [0,1,-1,2,-2,3,-3,4,-4,5,-5,6,-6,7,-7,8]
         self.ratios = [RATIO_LIST[i % len(RATIO_LIST)] for i in range(MAX_RINGS)]
+        self.quasi_ratios = [QUASI_LIST[i % len(QUASI_LIST)] for i in range(MAX_RINGS)]
 
     @property
     def base_omega(self): return TAU * (self.base_rpm/60.0)
@@ -103,10 +113,14 @@ class ResonanceController:
             for k in range(n):
                 nk = self.n_offsets[k]
                 rings[k].set_spin(self.base_omega + nk*self.beat_omega)
-        else:
+        elif self.mode == 'ratio':
             for k in range(n):
-                p,q = self.ratios[k]
-                rings[k].set_spin((p/float(q))*self.base_omega)
+                p, q = self.ratios[k]
+                rings[k].set_spin((p/float(q)) * self.base_omega)
+        elif self.mode == 'quasi':
+            for k in range(n):
+                p, q = self.quasi_ratios[k]
+                rings[k].set_spin((p/float(q)) * self.base_omega)
         omega_prec = self.prec_ratio * self.beat_omega
         for k in range(n):
             rings[k].set_precession(omega_prec)
@@ -139,19 +153,18 @@ class ControlPanel(ui.View):
             y += 28
             return s
 
-        def add_switch(text, init, action):
+        def add_segment(items, action, index=0):
             nonlocal y
-            sw = ui.Switch(frame=(10,y,51,31))
-            sw.value = init
-            self.add_subview(sw)
-            lb = ui.Label(frame=(65,y,120,31), text=text, text_color='#ddd', alignment=ui.ALIGN_LEFT)
-            self.add_subview(lb)
-            sw.action = action
+            seg = ui.SegmentedControl(frame=(10, y, 160, 32))
+            seg.segments = items
+            seg.selected_index = index
+            seg.action = action
+            self.add_subview(seg)
             y += 40
-            return sw
+            return seg
 
         add_label('Mode:')
-        self.mode_switch = add_switch('Beat-Lock / Ratios', True, self.toggle_mode)
+        self.mode_seg = add_segment(['Beat', 'Ratio', 'Quasi'], self.toggle_mode, 0)
 
         add_label('Base RPM')
         self.base_label = ui.Label(frame=(120, y-22, 60, 22), text=f'{DEFAULT_BASE_RPM:.2f}', text_color='#aaa', alignment=ui.ALIGN_RIGHT)
@@ -184,7 +197,8 @@ class ControlPanel(ui.View):
         return minv + s.value*(maxv-minv)
 
     def toggle_mode(self, sender):
-        self.controller.mode = 'beat' if sender.value else 'ratio'
+        idx = sender.selected_index
+        self.controller.mode = ['beat', 'ratio', 'quasi'][idx]
         self.on_change()
 
     def on_base(self, s):
@@ -285,9 +299,12 @@ class GyroScene(scene.Scene):
         if self.controller.mode == 'beat':
             self.bpm_badge.text = f'{int(self.controller.bpm)} BPM'
             self.bpm_badge.bg_color = (0.1,0.9,0.7,0.15)
-        else:
+        elif self.controller.mode == 'ratio':
             self.bpm_badge.text = 'RATIO MODE'
             self.bpm_badge.bg_color = (0.7,0.9,1.0,0.15)
+        else:
+            self.bpm_badge.text = 'QUASI MODE'
+            self.bpm_badge.bg_color = (1.0,0.6,0.3,0.15)
 
     def draw(self):
         w_total, h = self.size.w, self.size.h
