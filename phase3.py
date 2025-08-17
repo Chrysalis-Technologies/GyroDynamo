@@ -2,7 +2,7 @@
 # Tumbling gradient rings with alternating shading,
 # haptic + visual pulse synced to BPM.
 
-import math, time, random, ui
+import math, time, ui
 from scene import Scene, stroke, stroke_weight, line, background, get_screen_size, Vector2, SceneView
 from objc_util import ObjCClass
 
@@ -78,8 +78,8 @@ class TumblingGyroGradient(Scene):
     def __init__(self):
         super().__init__()
         self.bpm = 120.0
-        self._next_pulse = time.time()
         self._last_pulse_time = 0.0
+        self._aligned_prev = False
         self.speed_factor = 1.0
         self.paused = False
 
@@ -94,26 +94,15 @@ class TumblingGyroGradient(Scene):
         if RING_COUNT > 1:
             spacing = min(SPACING_TARGET, max(0.0, (max_outer - base_r)) / (RING_COUNT - 1))
 
-        axes = [
-            norm((1.0, 0.2, 0.0)),
-            norm((0.0, 1.0, 0.25)),
-            norm((0.35, 0.25, 1.0)),
-            norm((1.0, 1.0, 0.0)),
-            norm((0.0, 1.0, 1.0)),
-            norm((1.0, 0.0, 1.0)),
-            norm((0.5, 0.8, 0.25)),
-        ]
-
         self.rings = []
         for i in range(RING_COUNT):
             r = base_r + i * spacing
-            axis = axes[i % len(axes)]
             color = PALETTE[i % len(PALETTE)]
             omega = (0.6 + 0.25 * i) * (1 if i % 2 == 0 else -1)
             self.rings.append({
                 'radius': r,
-                'axis': axis,
-                'angle': random.random() * math.tau,
+                'axis': (0.0, 0.0, 1.0),
+                'angle': 0.0,
                 'omega': omega,
                 'color': color,
                 'shade_dir': 1 if i % 2 == 0 else -1
@@ -128,15 +117,18 @@ class TumblingGyroGradient(Scene):
         self._last = now
         if dt <= 0: return
 
+        aligned = True
+        eps = 0.01
         for ring in self.rings:
             ring['angle'] = (ring['angle'] + ring['omega'] * dt * self.speed_factor) % math.tau
+            a = ring['angle']
+            if not (a < eps or a > math.tau - eps):
+                aligned = False
 
-        # BPM pulse check
-        beat_interval = 60.0 / self.bpm
-        if now >= self._next_pulse:
+        if aligned and not self._aligned_prev:
             haptic_pulse()
             self._last_pulse_time = now
-            self._next_pulse += beat_interval
+        self._aligned_prev = aligned
 
     def draw_ring(self, ring, pulse_strength):
         pts3d = []
