@@ -56,6 +56,8 @@ This piece is an interactive visual–haptic metronome. Instead of showing time 
 GoGoGyro:
 A Pythonista script for iOS that renders concentric, differently colored rings rotating in 3D like nested gimbals (think Contact). Each ring spins and tilts on independent axes, but their angular velocities are locked to a musical tempo, producing clean polyrhythms that re‑align (“resolve”) on every measure.
 
+Desktop version: a pygame-powered port lives in `GoGoGyroDesktop.py`. Install pygame and run `python GoGoGyroDesktop.py` (use `--duration 5` for a short headless run). Controls: space toggles pause, up/down arrows adjust BPM.
+
 Intended goal
 	•	Visualize gyroscopic/gimbal dynamics with an immediately readable rhythm.
 	•	Serve as a silent, beat‑synchronized visual metronome/ambient display.
