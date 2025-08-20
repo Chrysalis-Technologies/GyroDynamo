@@ -3,6 +3,7 @@
 # Edit TARGET_BPM and BEATS_PER_MEASURE below. Tap screen to pause/resume.
 
 from scene import *
+import ui
 import math
 import random
 
@@ -12,6 +13,12 @@ import random
 TARGET_BPM = 96              # visual rhythm (beats per minute)
 BEATS_PER_MEASURE = 8        # rings all realign every measure
 BPM_SMOOTHING = 4.0          # how quickly current BPM eases to TARGET_BPM
+
+MIN_BPM = 20.0
+MAX_BPM = 300.0
+MIN_RING_COUNT = 1
+MAX_RING_COUNT = 8
+DEFAULT_RING_COUNT = 4
 
 # ========================
 # 3D rotation helpers
@@ -90,19 +97,50 @@ class GimbalRings(Scene):
         self.cam_dist = 3.5
         self.focal_len = 1.0
 
-        # Rings: choose relatively prime-ish integer ratios so
-        # rich polyrhythms emerge *within* the bar but realign each measure.
-        self.rings = [
-            GyroRing(1.06, (1.00, 0.30, 0.30), spin_ratio=5,  tx_ratio=2, ty_ratio=3),
-            GyroRing(0.84, (0.35, 0.85, 1.00), spin_ratio=7,  tx_ratio=3, ty_ratio=5),
-            GyroRing(0.62, (0.40, 1.00, 0.58), spin_ratio=9,  tx_ratio=4, ty_ratio=7),
-            GyroRing(0.44, (1.00, 0.74, 0.35), spin_ratio=11, tx_ratio=5, ty_ratio=9),
-        ]
+        self.ring_count = DEFAULT_RING_COUNT
+        self.build_rings(self.ring_count)
+
+        # UI controls
+        self.speed_slider = ui.Slider(frame=(10, h - 40, w - 20, 20))
+        self.speed_slider.flex = 'WT'
+        self.speed_slider.action = self.on_speed_slider
+        self.speed_slider.value = (self.target_bpm - MIN_BPM) / (MAX_BPM - MIN_BPM)
+        self.view.add_subview(self.speed_slider)
+
+        self.ring_slider = ui.Slider(frame=(10, h - 80, w - 20, 20))
+        self.ring_slider.flex = 'WT'
+        self.ring_slider.action = self.on_ring_slider
+        self.ring_slider.value = (self.ring_count - MIN_RING_COUNT) / (MAX_RING_COUNT - MIN_RING_COUNT)
+        self.view.add_subview(self.ring_slider)
 
         # Drawing params
         self.base_thickness = 2.6
         self.back_alpha = 0.35
         self.front_alpha = 0.98
+
+    def build_rings(self, count):
+        self.rings = []
+        max_r = 1.06
+        min_r = 0.2
+        for i in range(count):
+            t = i / (count - 1) if count > 1 else 0
+            radius = max_r - t * (max_r - min_r)
+            color = (random.random(), random.random(), random.random())
+            spin_ratio = 5 + 2 * i
+            tx_ratio = 2 + i
+            ty_ratio = 3 + 2 * i
+            self.rings.append(GyroRing(radius, color, spin_ratio=spin_ratio,
+                                       tx_ratio=tx_ratio, ty_ratio=ty_ratio))
+
+    def on_speed_slider(self, sender):
+        self.target_bpm = MIN_BPM + sender.value * (MAX_BPM - MIN_BPM)
+
+    def on_ring_slider(self, sender):
+        new_count = int(MIN_RING_COUNT + round(sender.value * (MAX_RING_COUNT - MIN_RING_COUNT)))
+        new_count = max(MIN_RING_COUNT, min(MAX_RING_COUNT, new_count))
+        if new_count != self.ring_count:
+            self.ring_count = new_count
+            self.build_rings(self.ring_count)
 
     # --------- Tempo helpers ---------
     def bar_omega(self):
@@ -205,14 +243,10 @@ class GimbalRings(Scene):
 
     # --------- Interaction ---------
     def touch_began(self, touch):
-        # Single tap toggles pause. Two-finger tap nudges BPM up; three-finger down.
         touches = list(self.touches.values())
         if len(touches) == 1:
+            # Single tap toggles pause
             self.paused = not self.paused
-        elif len(touches) == 2:
-            self.target_bpm = min(300.0, self.target_bpm + 5.0)
-        elif len(touches) >= 3:
-            self.target_bpm = max(20.0, self.target_bpm - 5.0)
 
 
 if __name__ == '__main__':
