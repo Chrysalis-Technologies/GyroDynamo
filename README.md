@@ -63,9 +63,9 @@ Intended goal
 	•	Provide a compact reference for 3D rotation, perspective projection, and UI control in Pythonista.
 
 Key features
-	•	Configurable ring count (NUM_RINGS) to match companion “spinning” scripts.
+	•	Adjustable ring count via an on-screen slider.
 	•	Tempo‑locked motion: all rotations are integer multiples of the bar frequency, so patterns recur every measure at a target BPM.
-	•	On‑screen speed controls: play/pause, BPM slider, and ± step buttons (±1/±5/±10).
+	•	On-screen controls: sliders for BPM and ring count; tap to pause/resume.
 	•	Depth‑aware drawing: back/front segments rendered with different alpha for occlusion.
 	•	Subtle beat/measure pulses (line thickness/alpha) to make the downbeat obvious.
 	•	Runs full‑screen at phone‑friendly performance using Pythonista’s scene + ui.
@@ -78,15 +78,15 @@ Per‑ring rates are small integer multiples of ω_bar, creating rich intra‑me
 	•	Beat/measure phase drives gentle visual pulses; no audio is generated.
 
 Controls & config
-	•	Slider/±/⏯: live BPM adjustment and play/pause.
+	•	Sliders: adjust BPM and ring quantity.
 	•	Tap scene: toggle pause.
-	•	Config vars: NUM_RINGS, TARGET_BPM, BEATS_PER_MEASURE, BPM_MIN, BPM_MAX, BPM_SMOOTHING.
+	•	Config vars: TARGET_BPM, BEATS_PER_MEASURE, BPM_SMOOTHING, MIN_BPM, MAX_BPM, MIN_RING_COUNT, MAX_RING_COUNT, DEFAULT_RING_COUNT.
 
 Requirements
 	•	Pythonista 3 on iOS (uses built‑in scene and ui; no external deps).
 
 Usage
-Open the script in Pythonista and run. Adjust BPM via the slider or step buttons. Set NUM_RINGS to keep parity with other ring‑spinning scripts in this repo.
+Open the script in Pythonista and run. Use the sliders to adjust BPM and ring count. Set DEFAULT_RING_COUNT if you want a different starting value to match other ring-spinning scripts in this repo.
 
 SpinningRings:
 A self‑contained Pythonista script (tumbling_gyro_rings_bpm.py) that renders many concentric rings which rotate in 3D on different axes (“tumbling”). The rings are drawn as donuts (outer circle minus inner circle) and projected to 2D with a lightweight perspective camera. The motion can be phase‑locked to a musical tempo so the whole scene repeats on a strict beat, and a subtle flash marks each downbeat.
