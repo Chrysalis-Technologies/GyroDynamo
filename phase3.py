@@ -17,7 +17,7 @@ def haptic_pulse():
 
 # ---------------- Config ----------------
 BG = (0.05, 0.07, 0.10)
-RING_COUNT = 7
+DEFAULT_RING_COUNT = 7
 BASE_RADIUS_FACTOR = 0.07
 SPACING_TARGET = 46.0
 SEGMENTS = 160
@@ -80,19 +80,23 @@ class TumblingGyroGradient(Scene):
         self.bpm = 120.0
         self._last_pulse_time = 0.0
         self._aligned_prev = False
+        self._outer_aligned_prev = False
         self.speed_factor = 1.0
         self.paused = False
+        self.ring_count = DEFAULT_RING_COUNT
 
     def setup(self):
         self.background_color = BG
         self.center = Vector2(self.size.w / 2, self.size.h / 2)
         self.min_dim = min(self.size.w, self.size.h)
+        self.build_rings()
 
+    def build_rings(self):
         base_r = self.min_dim * BASE_RADIUS_FACTOR
         max_outer = (self.min_dim * 0.5) - 20.0
         spacing = SPACING_TARGET
-        if RING_COUNT > 1:
-            spacing = min(SPACING_TARGET, max(0.0, (max_outer - base_r)) / (RING_COUNT - 1))
+        if self.ring_count > 1:
+            spacing = min(SPACING_TARGET, max(0.0, (max_outer - base_r)) / (self.ring_count - 1))
 
         axes = [
             norm((1.0, 0.2, 0.0)),
@@ -105,7 +109,7 @@ class TumblingGyroGradient(Scene):
         ]
 
         self.rings = []
-        for i in range(RING_COUNT):
+        for i in range(self.ring_count):
             r = base_r + i * spacing
             axis = axes[i % len(axes)]
             color = PALETTE[i % len(PALETTE)]
@@ -118,8 +122,11 @@ class TumblingGyroGradient(Scene):
                 'color': color,
                 'shade_dir': 1 if i % 2 == 0 else -1
             })
-
         self._last = time.time()
+
+    def set_ring_count(self, count):
+        self.ring_count = max(1, int(count))
+        self.build_rings()
 
     def update(self):
         if self.paused: return
@@ -127,18 +134,25 @@ class TumblingGyroGradient(Scene):
         dt = now - self._last
         self._last = now
         if dt <= 0: return
-
         aligned = True
+        outer_aligned = False
         eps = 0.01
-        for ring in self.rings:
+        for idx, ring in enumerate(self.rings):
             ring['angle'] = (ring['angle'] + ring['omega'] * dt * self.speed_factor) % math.tau
             a = ring['angle']
+            if idx == len(self.rings) - 1:
+                if a < eps or a > math.tau - eps:
+                    outer_aligned = True
             if not (a < eps or a > math.tau - eps):
                 aligned = False
 
-        if aligned and not self._aligned_prev:
+        if outer_aligned and not self._outer_aligned_prev:
             haptic_pulse()
             self._last_pulse_time = now
+        elif aligned and not self._aligned_prev:
+            haptic_pulse()
+            self._last_pulse_time = now
+        self._outer_aligned_prev = outer_aligned
         self._aligned_prev = aligned
 
     def draw_ring(self, ring, pulse_strength):
@@ -200,6 +214,21 @@ class MainView(ui.View):
         self.add_subview(ui.Label(frame=(120, self.height-50, 80, 30),
                                   text='BPM', text_color='white', alignment=ui.ALIGN_LEFT))
 
+        # Ring count stepper
+        self.ring_label = ui.Label(frame=(200, self.height-50, 60, 30),
+                                   text='Rings', text_color='white', alignment=ui.ALIGN_LEFT)
+        self.add_subview(self.ring_label)
+        self.ring_stepper = ui.Stepper(frame=(260, self.height-50, 94, 30), flex='WT')
+        self.ring_stepper.action = self.ring_count_changed
+        self.ring_stepper.value = self.scene.ring_count
+        self.ring_stepper.step = 1
+        self.ring_stepper.minimum_value = 1
+        self.ring_stepper.maximum_value = 12
+        self.add_subview(self.ring_stepper)
+        self.ring_value = ui.Label(frame=(360, self.height-50, 40, 30),
+                                   text=str(self.scene.ring_count), text_color='white', alignment=ui.ALIGN_LEFT)
+        self.add_subview(self.ring_value)
+
     def slider_changed(self, sender):
         self.scene.speed_factor = 0.1 + sender.value * 2.9
 
@@ -211,6 +240,11 @@ class MainView(ui.View):
                 self.scene._next_pulse = time.time() + (60.0 / self.scene.bpm)
         except ValueError:
             pass
+
+    def ring_count_changed(self, sender):
+        count = int(sender.value)
+        self.scene.set_ring_count(count)
+        self.ring_value.text = str(count)
 
 # --------------- Main ---------------
 if __name__ == '__main__':
