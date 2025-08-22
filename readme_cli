@@ -1,0 +1,54 @@
+# Recon CLI
+
+This repository includes a simple reconnaissance script `recon.sh` for gathering surface-level information about systems connected to a target IP address.
+
+## Installation
+
+The script relies on common open-source tools. Install them in your Codespace using:
+
+```bash
+apt-get update && apt-get install -y nmap masscan sqlmap dnsutils whois theharvester subfinder amass httprobe curl wget
+```
+
+Optional tools like `waybackurls` can be installed via Go:
+
+```bash
+go install github.com/tomnomnom/waybackurls@latest
+```
+
+Ensure your `$PATH` includes Go binaries (e.g., `export PATH=$PATH:/root/go/bin`).
+
+## Usage
+
+```
+recon.sh [command] [options]
+```
+
+### Commands
+
+* `recon scan <target_ip>`: Performs a comprehensive scan of the target IP address.
+* `recon dns <target_ip>`: Retrieves DNS records for the target IP address.
+* `recon subdomain <target_ip>`: Discovers subdomains associated with the target IP address or domain.
+* `recon web <target_ip>`: Analyzes the web server (if present) on the target IP address.
+* `recon ssl <target_ip>`: Retrieves SSL/TLS certificate information for the target IP address.
+* `recon all <target_ip>`: Executes all available reconnaissance modules.
+* `recon help`: Displays this help message.
+
+### Options
+
+* `-o <output_file>`: Specifies the output file (default: `recon_output.json`).
+* `-v`: Verbose mode (provides more detailed output).
+* `-f <output_format>`: Specifies the output format (json, md, txt). Default is json.
+
+### Examples
+
+```bash
+./recon.sh scan 192.168.1.1
+./recon.sh dns 8.8.8.8 -o dns_output.json
+./recon.sh subdomain example.com
+./recon.sh web 10.0.0.5 -v
+./recon.sh all 172.217.160.142 -f md
+./recon.sh help
+```
+
+The output file will contain the results in the chosen format. JSON output contains raw command results to allow further parsing.
