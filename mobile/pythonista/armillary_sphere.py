@@ -4,10 +4,49 @@ import sys
 import time
 
 try:
-    import scene
-except Exception:  # allow import outside Pythonista
+    import scene as _scene
+    # The Pythonista `scene` module exposes a `Path` class used for drawing. In
+    # some environments (e.g. running the script outside Pythonista) a different
+    # module named `scene` might be importable but without the expected API. We
+    # explicitly check for the `Path` attribute and fall back to a harmless stub
+    # if it's missing so that the math helpers can still be imported and tested.
+    if not hasattr(_scene, "Path"):
+        raise ImportError
+    scene = _scene
+except Exception:  # allow import outside Pythonista or with incompatible module
     from types import SimpleNamespace
-    scene = SimpleNamespace(Scene=object, Path=object, run=None, background=None)
+
+    class _DummyPath:
+        """Minimal stand-in for `scene.Path` used when not running in Pythonista.
+
+        The methods implement no behaviour but allow code that builds paths to
+        execute without raising attribute errors.
+        """
+
+        @staticmethod
+        def oval(*args, **kwargs):
+            return _DummyPath()
+
+        def move_to(self, *args, **kwargs):
+            return self
+
+        def line_to(self, *args, **kwargs):
+            return self
+
+        def close(self):
+            return self
+
+        def fill(self):
+            return self
+
+    def _no_op(*args, **kwargs):
+        pass
+
+    scene = SimpleNamespace(
+        Scene=object, Path=_DummyPath, run=_no_op, background=_no_op
+    )
+    # Expose the stub as a module so `from scene import run` works below.
+    sys.modules.setdefault("scene", scene)
 
 try:
     import ui  # noqa: F401
