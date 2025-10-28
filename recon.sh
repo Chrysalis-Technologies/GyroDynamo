@@ -69,7 +69,7 @@ gather_dns() {
     if command_exists dig; then dig +noall +answer -x "$target"; fi
     echo
     echo "# whois"
-    if command_exists whois; then whois "$target" | head -n 100; else echo "whois not installed"; fi
+    if command_exists whois; then (whois "$target" | head -n 100) || true; else echo "whois not installed"; fi
   } > "$DNS_FILE" 2>&1
 }
 
