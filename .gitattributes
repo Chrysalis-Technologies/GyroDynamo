@@ -1,0 +1,9 @@
+# Normalize line endings to LF for text files
+* text eol=lf
+
+# Explicitly enforce LF on common source types
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
