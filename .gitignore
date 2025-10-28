@@ -1,0 +1,6 @@
+.venv/
+.vscode/
+scans/
+tools/
+recon_*.json
+209.166.130.190.txt
