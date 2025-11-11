@@ -58,6 +58,19 @@ A Pythonista script for iOS that renders concentric, differently colored rings r
 
 Desktop version: a pygame-powered port lives in `GoGoGyroDesktop.py`. Install pygame and run `python GoGoGyroDesktop.py` (use `--duration 5` for a short headless run). Controls: space toggles pause, up/down arrows adjust BPM.
 
+GoGoSolar:
+An interactive solar-system simulation that shares the same Pythonista gesture controls as GoGoGyro. `GoGoSolar.py` models the Sun and eight planets with an n-body gravitational solver in astronomical units (AU). Trails trace each orbit while the camera is pitched to give a sense of depth.
+
+Controls mirror the ring visualizer:
+        •       Single-finger tap toggles pause.
+        •       Two-finger tap increases the global time warp (faster orbits).
+        •       Three-or-more finger tap decreases the time warp (slower orbits).
+
+Physics model
+        •       Normalized gravity constant (4π²) so that 1 AU orbits complete in roughly one simulation year.
+        •       Semi-implicit integration with a small softening term for stability.
+        •       Per-planet mass, eccentricity, and inclination approximations generate distinct orbital paths.
+
 Intended goal
 	•	Visualize gyroscopic/gimbal dynamics with an immediately readable rhythm.
 	•	Serve as a silent, beat‑synchronized visual metronome/ambient display.
