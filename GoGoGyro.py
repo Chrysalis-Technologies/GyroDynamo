@@ -2,6 +2,23 @@
 # Larger rendering + motion synchronized to a target BPM (visual “resonance” on each measure).
 # Edit TARGET_BPM and BEATS_PER_MEASURE below. Tap screen to pause/resume.
 
+"""Pythonista scene that mirrors the desktop GoGoGyro experience on phones.
+
+The desktop build (``GoGoGyroDesktop.py``) recently gained rhythm-driven
+touches—measure-synced alpha pops, beat pulses, and smooth BPM easing.  This
+module recreates the same behaviour using the ``scene`` module so the animation
+looks and feels identical on iPhone/iPad.
+
+Gestures
+========
+* Single tap: toggle pause / resume.
+* Two-finger tap: bump the target BPM up by 5.
+* Three-finger tap: bump the target BPM down by 5.
+
+Touch handling keeps track of active touches so that quick multitouch gestures
+reliably map to the BPM nudges without accidentally toggling pause.
+"""
+
 from scene import *
 import math
 import random
@@ -12,6 +29,7 @@ import random
 TARGET_BPM = 96              # visual rhythm (beats per minute)
 BEATS_PER_MEASURE = 8        # rings all realign every measure
 BPM_SMOOTHING = 4.0          # how quickly current BPM eases to TARGET_BPM
+SHOW_HUD = True              # display BPM/beat info at the bottom of the screen
 
 # ========================
 # 3D rotation helpers
@@ -80,6 +98,10 @@ class GimbalRings(Scene):
         self.cur_bpm = float(TARGET_BPM)
         self.beats_per_measure = BEATS_PER_MEASURE
 
+        # Track active touches so we can tell single taps from multitouch BPM nudges.
+        self._active_touches = {}
+        self._pending_single_tap = None
+
         w, h = self.size
         self.cx, self.cy = w * 0.5, h * 0.5
 
@@ -103,6 +125,18 @@ class GimbalRings(Scene):
         self.base_thickness = 2.6
         self.back_alpha = 0.35
         self.front_alpha = 0.98
+
+        if SHOW_HUD:
+            self.hud = LabelNode(
+                "",
+                position=(self.size.w * 0.5, 22),
+                anchor_point=(0.5, 0.5),
+                color=(1.0, 1.0, 1.0, 0.8),
+                font=('Menlo', 12),
+                parent=self,
+            )
+        else:
+            self.hud = None
 
     # --------- Tempo helpers ---------
     def bar_omega(self):
@@ -198,21 +232,49 @@ class GimbalRings(Scene):
         for r in self.rings:
             self.draw_ring(r, thickness_scale=thickness_scale, alpha_boost=alpha_boost)
 
-        # Optional HUD (comment out if you want it cleaner)
-        # tint(1,1,1,0.75)
-        # LabelNode(f'{self.cur_bpm:0.1f} BPM  |  M:{self.beats_per_measure}  |  beat:{int(bph*BEATS_PER_MEASURE)%self.beats_per_measure+1}',
-        #           position=(self.size.w*0.5, 22), parent=self)
+        if self.hud is not None:
+            beat_idx = int(bph * self.beats_per_measure) % self.beats_per_measure + 1
+            self.hud.text = (
+                f"{self.cur_bpm:5.1f} BPM  |  M:{self.beats_per_measure}  |  beat:{beat_idx}"
+            )
 
     # --------- Interaction ---------
     def touch_began(self, touch):
-        # Single tap toggles pause. Two-finger tap nudges BPM up; three-finger down.
-        touches = list(self.touches.values())
-        if len(touches) == 1:
+        # Register the new touch and decide which gesture to trigger.  We delay
+        # pausing until the touch ends so that multi-finger taps don't cause a
+        # spurious toggle.
+        self._active_touches[touch.touch_id] = touch
+
+        if touch.tap_count >= 2:
             self.paused = not self.paused
-        elif len(touches) == 2:
+            self._pending_single_tap = None
+            return
+
+        active = len(self._active_touches)
+        if active == 1:
+            # Remember this touch; if no other fingers join before it ends we
+            # treat it as a single tap.
+            self._pending_single_tap = touch.touch_id
+        elif active == 2:
+            self._pending_single_tap = None
             self.target_bpm = min(300.0, self.target_bpm + 5.0)
-        elif len(touches) >= 3:
+        elif active >= 3:
+            self._pending_single_tap = None
             self.target_bpm = max(20.0, self.target_bpm - 5.0)
+
+    def touch_moved(self, touch):
+        if touch.touch_id in self._active_touches:
+            self._active_touches[touch.touch_id] = touch
+
+    def touch_ended(self, touch):
+        self._active_touches.pop(touch.touch_id, None)
+        if self._pending_single_tap == touch.touch_id:
+            self.paused = not self.paused
+        if not self._active_touches:
+            self._pending_single_tap = None
+
+    # Some iOS devices may deliver cancelled touches (e.g. incoming phone call).
+    touch_cancelled = touch_ended
 
 
 if __name__ == '__main__':
