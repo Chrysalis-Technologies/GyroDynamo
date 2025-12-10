@@ -131,8 +131,9 @@ class GyroPulseScene(scene.Scene):
             x += 56
 
     def _hit_button(self, touch):
+        pt = (touch.location.x, self.size.h - touch.location.y)
         for btn in self.buttons:
-            if btn['rect'].contains_point(touch.location.x, self.size.h - touch.location.y):
+            if btn['rect'].contains_point(pt):
                 return btn['action']
         return None
 
