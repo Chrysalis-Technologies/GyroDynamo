@@ -134,7 +134,8 @@ class GyroPulseScene(scene.Scene):
         pt = (touch.location.x, self.size.h - touch.location.y)
         for btn in self.buttons:
             r = btn['rect']
-            if (r.x <= pt[0] <= r.x + r.w) and (r.y <= pt[1] <= r.y + r.h):
+            rx, ry, rw, rh = r.x, r.y, r.width, r.height
+            if (rx <= pt[0] <= rx + rw) and (ry <= pt[1] <= ry + rh):
                 return btn['action']
         return None
 
