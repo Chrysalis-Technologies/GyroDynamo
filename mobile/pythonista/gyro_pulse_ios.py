@@ -131,7 +131,7 @@ class GyroPulseScene(scene.Scene):
             x += 56
 
     def _hit_button(self, touch):
-        pt = (touch.location.x, self.size.h - touch.location.y)
+        pt = (touch.location.x, touch.location.y)
         for btn in self.buttons:
             r = btn['rect']
             rx, ry, rw, rh = r.x, r.y, r.width, r.height
@@ -268,9 +268,9 @@ class GyroPulseScene(scene.Scene):
             scene.fill(0.1, 0.12, 0.16, 0.75)
             scene.stroke(0.45, 0.48, 0.55, 0.9)
             scene.stroke_weight(1)
-            scene.rect(rect.x, h - rect.y - rect.h, rect.w, rect.h)
+            scene.rect(rect.x, rect.y, rect.w, rect.h)
             scene.fill(0.9, 0.9, 0.95, 1.0)
-            scene.text(btn['label'], 'Helvetica', 12, rect.x + rect.w * 0.5, h - rect.y - rect.h * 0.62, 5)
+            scene.text(btn['label'], 'Helvetica', 12, rect.x + rect.w * 0.5, rect.y + rect.h * 0.38, 5)
 
         # HUD text
         info = f"{len(self.rings)} rings • align {self.reset_period:.1f}s • zoom {self.zoom:.2f}"
