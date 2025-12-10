@@ -230,23 +230,25 @@ class GyroPulseScene(scene.Scene):
         for ring in self.rings:
             pts3d = ring.points3d()
             pts2d = [self._project(p) for p in pts3d]
-            path = ui.Path()
-            path.move_to(*pts2d[0])
-            for p in pts2d[1:]:
-                path.line_to(*p)
-            path.close()
 
             r, g, b = ring.color
             a = min(1.0, max(0.1, 0.4 + alpha_boost))
-            scene.stroke(r, g, b, a)
-            scene.fill(0, 0, 0, 0)
-            scene.draw_path(path)
 
-            # Glow
+            # Glow stroke
             scene.stroke(r, g, b, min(1.0, a * 0.4 * glow_scale))
             scene.stroke_weight(self.base_thickness * thickness_scale * 2.0)
-            scene.draw_path(path)
+            for i in range(len(pts2d)):
+                x0, y0 = pts2d[i]
+                x1, y1 = pts2d[(i + 1) % len(pts2d)]
+                scene.line(x0, y0, x1, y1)
+
+            # Core stroke
+            scene.stroke(r, g, b, a)
             scene.stroke_weight(self.base_thickness * thickness_scale)
+            for i in range(len(pts2d)):
+                x0, y0 = pts2d[i]
+                x1, y1 = pts2d[(i + 1) % len(pts2d)]
+                scene.line(x0, y0, x1, y1)
 
         # Center sphere
         base_c = self._center_color()
