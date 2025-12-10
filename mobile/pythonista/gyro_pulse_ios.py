@@ -124,7 +124,7 @@ class GyroPulseScene(scene.Scene):
     # ---------- UI ----------
     def _build_buttons(self):
         labels = ['+', 'O+', '-', 'T-', 'T+', 'Z-', 'Z+']
-        actions = ['add_inner', 'add_outer', 'remove', 'period_down', 'period_up', 'zoom_out', 'zoom_in']
+        actions = ['add_inner', 'add_outer', 'remove_ring', 'period_down', 'period_up', 'zoom_out', 'zoom_in']
         x = 14
         for lbl, act in zip(labels, actions):
             self.buttons.append({'rect': ui.Rect(x, 12, 52, 30), 'label': lbl, 'action': act})
