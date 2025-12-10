@@ -92,6 +92,7 @@ class GyroPulseScene(scene.Scene):
     def _init_rings(self):
         for idx, r in enumerate([1.0, 0.8, 0.62, 0.46]):
             self.rings.append(self._make_ring(idx, r))
+        self._layout_buttons()
 
     def _reindex(self):
         self.rings.sort(key=lambda r: r.R, reverse=True)
@@ -129,6 +130,15 @@ class GyroPulseScene(scene.Scene):
         for lbl, act in zip(labels, actions):
             self.buttons.append({'rect': ui.Rect(x, 12, 52, 30), 'label': lbl, 'action': act})
             x += 56
+
+    def _layout_buttons(self):
+        # Place the button bar near the bottom (assumes scene origin top-left in Pythonista).
+        bar_h = 30
+        margin = 10
+        y = max(margin, self.size.h - bar_h - margin)
+        for btn in self.buttons:
+            r = btn['rect']
+            btn['rect'] = ui.Rect(r.x, y, r.width, r.height)
 
     def _hit_button(self, touch):
         pt = (touch.location.x, touch.location.y)
@@ -206,6 +216,7 @@ class GyroPulseScene(scene.Scene):
 
     def draw(self):
         w, h = self.size
+        self._layout_buttons()
         # Gradient background
         for i in range(int(h)):
             t = i / max(1, h - 1)
