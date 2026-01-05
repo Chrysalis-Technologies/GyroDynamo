@@ -23,6 +23,17 @@ from scene import *
 import math
 import random
 
+# ------------------------
+# Orbital sun core palette
+# ------------------------
+# Helios / Orbital Sun Core palette
+CORE_COLOR = (0.98, 0.99, 1.0)
+CORE_GLOW = (0.62, 0.8, 1.0)
+RING_GOLD = (0.93, 0.76, 0.30)
+ACCENT_TEAL = (0.18, 0.74, 0.7)
+BG_DEEP = (0.02, 0.03, 0.05)
+BG_HALO = (0.06, 0.08, 0.14)
+
 # ========================
 # Tempo / Rhythm Settings
 # ========================
@@ -54,10 +65,13 @@ def rot_z(p, a):
 # ========================
 class GyroRing:
     def __init__(self, radius, color, n_points=240,
-                 spin_ratio=1, tx_ratio=1, ty_ratio=1):
+                 spin_ratio=1, tx_ratio=1, ty_ratio=1, offset=None):
         self.R = radius
         self.color = color  # (r,g,b) 0..1
         self.n = n_points
+        self.offset = offset if offset is not None else (0.0, 0.0, 0.0)
+        self.glyph_stride = random.choice([9, 11, 13])
+        self.glyph_phase = random.randrange(self.glyph_stride)
 
         # Orientation state
         self.tilt_x = random.uniform(-0.3, 0.3)
@@ -78,12 +92,14 @@ class GyroRing:
     def ring_points_3d(self):
         pts = []
         two_pi = 2.0 * math.pi
+        ox, oy, oz = self.offset
         for i in range(self.n):
             t = two_pi * i / self.n
             p = (self.R * math.cos(t), self.R * math.sin(t), 0.0)
             p = rot_z(p, self.spin)
             p = rot_x(p, self.tilt_x)
             p = rot_y(p, self.tilt_y)
+            p = (p[0] + ox, p[1] + oy, p[2] + oz)
             pts.append(p)
         return pts
 
@@ -114,15 +130,36 @@ class GimbalRings(Scene):
 
         # Rings: choose relatively prime-ish integer ratios so
         # rich polyrhythms emerge *within* the bar but realign each measure.
-        self.rings = [
-            GyroRing(1.06, (1.00, 0.30, 0.30), spin_ratio=5,  tx_ratio=2, ty_ratio=3),
-            GyroRing(0.84, (0.35, 0.85, 1.00), spin_ratio=7,  tx_ratio=3, ty_ratio=5),
-            GyroRing(0.62, (0.40, 1.00, 0.58), spin_ratio=9,  tx_ratio=4, ty_ratio=7),
-            GyroRing(0.44, (1.00, 0.74, 0.35), spin_ratio=11, tx_ratio=5, ty_ratio=9),
+        ring_specs = [
+            (1.06, 5, 2, 3),
+            (0.84, 7, 3, 5),
+            (0.62, 9, 4, 7),
+            (0.44, 11, 5, 9),
         ]
+        tones = [1.0, 0.94, 0.88, 0.82]
+        self.rings = []
+        for idx, (radius, spin_ratio, tx_ratio, ty_ratio) in enumerate(ring_specs):
+            tone = tones[idx % len(tones)]
+            color = tuple(min(1.0, c * tone) for c in RING_GOLD)
+            jitter = 0.06
+            offset = (
+                random.uniform(-jitter, jitter) * radius,
+                random.uniform(-jitter * 0.6, jitter * 0.6) * radius,
+                random.uniform(-jitter, jitter) * radius,
+            )
+            self.rings.append(
+                GyroRing(
+                    radius,
+                    color,
+                    spin_ratio=spin_ratio,
+                    tx_ratio=tx_ratio,
+                    ty_ratio=ty_ratio,
+                    offset=offset,
+                )
+            )
 
         # Drawing params
-        self.base_thickness = 2.6
+        self.base_thickness = 2.2
         self.back_alpha = 0.35
         self.front_alpha = 0.98
 
@@ -188,33 +225,115 @@ class GimbalRings(Scene):
 
     def draw_ring(self, ring: GyroRing, thickness_scale=1.0, alpha_boost=0.0):
         pts3d = ring.ring_points_3d()
-        segs_back, segs_front = [], []
+        segments = []
         n = ring.n
         for i in range(n):
             p0 = pts3d[i]
             p1 = pts3d[(i + 1) % n]
             z_avg = 0.5 * (p0[2] + p1[2])
+            depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, z_avg))
             x0, y0 = self.project(p0)
             x1, y1 = self.project(p1)
-            (segs_back if z_avg < 0 else segs_front).append((x0, y0, x1, y1))
+            segments.append((z_avg, depth_mix, i, x0, y0, x1, y1))
 
-        # Back (far) segments
+        # Draw back-to-front for cleaner occlusion.
+        segments.sort(key=lambda s: s[0])
+
+        # Glow pass
+        stroke_weight(self.base_thickness * thickness_scale * 2.1)
+        for _, depth_mix, _, x0, y0, x1, y1 in segments:
+            shade = 0.68 + 0.3 * depth_mix
+            r = min(1.0, ring.color[0] * shade)
+            g = min(1.0, ring.color[1] * shade)
+            b = min(1.0, ring.color[2] * shade)
+            a = (self.back_alpha + (self.front_alpha - self.back_alpha) * depth_mix) * 0.25
+            stroke(r, g, b, max(0.0, min(1.0, a)))
+            line(x0, y0, x1, y1)
+
+        # Base pass
         stroke_weight(self.base_thickness * thickness_scale)
-        stroke(ring.color[0], ring.color[1], ring.color[2], max(0.0, min(1.0, self.back_alpha)))
-        for x0, y0, x1, y1 in segs_back:
+        for _, depth_mix, _, x0, y0, x1, y1 in segments:
+            shade = 0.72 + 0.35 * depth_mix
+            r = min(1.0, ring.color[0] * shade)
+            g = min(1.0, ring.color[1] * shade)
+            b = min(1.0, ring.color[2] * shade)
+            alpha = self.back_alpha + (self.front_alpha - self.back_alpha) * depth_mix + alpha_boost
+            stroke(r, g, b, max(0.0, min(1.0, alpha)))
             line(x0, y0, x1, y1)
 
-        # Front (near) segments with a slight alpha “pulse”
-        stroke(ring.color[0], ring.color[1], ring.color[2],
-               max(0.0, min(1.0, self.front_alpha + alpha_boost)))
-        for x0, y0, x1, y1 in segs_front:
+        # Glyph pass (etched ticks)
+        stroke_weight(self.base_thickness * thickness_scale * 0.65)
+        for _, depth_mix, idx, x0, y0, x1, y1 in segments:
+            if (idx + ring.glyph_phase) % ring.glyph_stride != 0 or depth_mix < 0.35:
+                continue
+            shade = 0.95 + 0.25 * depth_mix
+            r = min(1.0, ring.color[0] * shade + 0.12)
+            g = min(1.0, ring.color[1] * shade + 0.12)
+            b = min(1.0, ring.color[2] * shade + 0.12)
+            alpha = min(1.0, self.front_alpha + alpha_boost + 0.2)
+            stroke(r, g, b, alpha)
             line(x0, y0, x1, y1)
+
+    def _core_radius_px(self):
+        if self.rings:
+            inner = self.rings[-1]
+            px, _ = self.project((inner.R, 0, 0))
+            return max(10, int(abs(px - self.cx) * 0.45))
+        return int(min(self.size) * 0.08)
+
+    def draw_core_glow(self, pulse=0.0):
+        r = self._core_radius_px()
+        no_stroke()
+        for i in range(5):
+            t = i / 4.0
+            glow_r = r * (1.3 + t * 2.0 + 0.25 * pulse)
+            alpha = 0.26 * (1.0 - t) ** 1.5
+            fill(CORE_GLOW[0], CORE_GLOW[1], CORE_GLOW[2], alpha)
+            ellipse(self.cx - glow_r, self.cy - glow_r, glow_r * 2, glow_r * 2)
+
+    def draw_core_body(self):
+        r = self._core_radius_px()
+        no_stroke()
+        fill(CORE_COLOR[0], CORE_COLOR[1], CORE_COLOR[2], 1.0)
+        ellipse(self.cx - r, self.cy - r, r * 2, r * 2)
+        highlight_r = r * 0.38
+        fill(1.0, 1.0, 1.0, 0.5)
+        ellipse(
+            self.cx - r * 0.35 - highlight_r,
+            self.cy - r * 0.35 - highlight_r,
+            highlight_r * 2,
+            highlight_r * 2,
+        )
+
+    def draw_aux_node(self):
+        if not self.rings:
+            return
+        t = self.elapsed * 0.35
+        orbit_r = self.rings[0].R * 0.9
+        pos = (
+            orbit_r * math.cos(t),
+            orbit_r * 0.35 * math.sin(t * 0.7),
+            orbit_r * 0.6 * math.sin(t),
+        )
+        x, y = self.project(pos)
+        r = max(4, int(self._core_radius_px() * 0.3))
+        no_stroke()
+        fill(ACCENT_TEAL[0], ACCENT_TEAL[1], ACCENT_TEAL[2], 0.16)
+        ellipse(x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8)
+        fill(ACCENT_TEAL[0], ACCENT_TEAL[1], ACCENT_TEAL[2], 0.6)
+        ellipse(x - r, y - r, r * 2, r * 2)
+        fill(0.95, 1.0, 1.0, 0.45)
+        ellipse(x - r * 0.32, y - r * 0.32, r * 0.64, r * 0.64)
+        no_fill()
+        stroke(ACCENT_TEAL[0], ACCENT_TEAL[1], ACCENT_TEAL[2], 0.25)
+        stroke_weight(1.0)
+        ellipse(x - r * 1.4, y - r * 1.4, r * 2.8, r * 2.8)
 
     def draw(self):
         # Background + subtle vignette
-        background(0, 0, 0)
+        background(BG_DEEP[0], BG_DEEP[1], BG_DEEP[2])
         no_stroke()
-        fill(0.05, 0.05, 0.08, 0.18)
+        fill(BG_HALO[0], BG_HALO[1], BG_HALO[2], 0.22)
         d = min(self.size) * 1.02
         ellipse(self.cx - d/2, self.cy - d/2, d, d)
 
@@ -228,9 +347,14 @@ class GimbalRings(Scene):
         thickness_scale = 1.0 + 0.25 * measure_pulse
         alpha_boost = 0.06 * beat_pulse + 0.12 * measure_pulse
 
+        self.draw_core_glow(pulse=measure_pulse)
+
         # Draw rings outer → inner
         for r in self.rings:
             self.draw_ring(r, thickness_scale=thickness_scale, alpha_boost=alpha_boost)
+
+        self.draw_aux_node()
+        self.draw_core_body()
 
         if self.hud is not None:
             beat_idx = int(bph * self.beats_per_measure) % self.beats_per_measure + 1

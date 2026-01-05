@@ -2,8 +2,20 @@
 # Tumbling gradient rings with alternating shading,
 # haptic + visual pulse synced to BPM.
 
-import math, time, ui
-from scene import Scene, stroke, stroke_weight, line, background, get_screen_size, Vector2, SceneView
+import math, time, ui, random
+from scene import (
+    Scene,
+    stroke,
+    stroke_weight,
+    line,
+    background,
+    fill,
+    ellipse,
+    no_stroke,
+    get_screen_size,
+    Vector2,
+    SceneView,
+)
 from objc_util import ObjCClass
 
 # ---------------- Haptics ----------------
@@ -16,25 +28,27 @@ def haptic_pulse():
     impact_medium.prepare()
 
 # ---------------- Config ----------------
-BG = (0.05, 0.07, 0.10)
+BG = (0.02, 0.03, 0.05)
 DEFAULT_RING_COUNT = 7
 BASE_RADIUS_FACTOR = 0.07
 SPACING_TARGET = 46.0
 SEGMENTS = 160
 CAMERA_D = 900.0
 
-LINE_THICKNESS = 3.0
+LINE_THICKNESS = 2.0
 BACK_ALPHA = 0.25
 FRONT_ALPHA = 1.0
 
+# Helios / Orbital Sun Core palette
+RING_GOLD = (0.93, 0.76, 0.30)
+CORE_COLOR = (0.98, 0.99, 1.0)
+CORE_GLOW = (0.62, 0.8, 1.0)
+ACCENT_TEAL = (0.18, 0.74, 0.7)
 PALETTE = [
-    (0.98, 0.46, 0.30),
-    (0.20, 0.78, 0.68),
-    (0.60, 0.50, 0.90),
-    (0.95, 0.78, 0.25),
-    (0.35, 0.72, 0.95),
-    (0.90, 0.42, 0.65),
-    (0.55, 0.88, 0.45),
+    (0.94, 0.79, 0.34),
+    (0.9, 0.75, 0.3),
+    (0.86, 0.71, 0.28),
+    (0.82, 0.67, 0.26),
 ]
 
 # ---------------- Pulse curve ----------------
@@ -84,6 +98,7 @@ class TumblingGyroGradient(Scene):
         self.speed_factor = 1.0
         self.paused = False
         self.ring_count = DEFAULT_RING_COUNT
+        self.aux_phase = 0.0
 
     def setup(self):
         self.background_color = BG
@@ -114,13 +129,23 @@ class TumblingGyroGradient(Scene):
             axis = axes[i % len(axes)]
             color = PALETTE[i % len(PALETTE)]
             omega = (0.6 + 0.25 * i) * (1 if i % 2 == 0 else -1)
+            offset = (
+                random.uniform(-0.06, 0.06) * r,
+                random.uniform(-0.04, 0.04) * r,
+                random.uniform(-0.06, 0.06) * r,
+            )
+            glyph_stride = random.choice([9, 11, 13])
+            glyph_phase = random.randrange(glyph_stride)
             self.rings.append({
                 'radius': r,
                 'axis': axis,
                 'angle': 0.0,
                 'omega': omega,
                 'color': color,
-                'shade_dir': 1 if i % 2 == 0 else -1
+                'shade_dir': 1 if i % 2 == 0 else -1,
+                'offset': offset,
+                'glyph_stride': glyph_stride,
+                'glyph_phase': glyph_phase,
             })
         self._last = time.time()
 
@@ -146,6 +171,8 @@ class TumblingGyroGradient(Scene):
             if not (a < eps or a > math.tau - eps):
                 aligned = False
 
+        self.aux_phase = (self.aux_phase + dt * 0.35 * self.speed_factor) % math.tau
+
         if outer_aligned and not self._outer_aligned_prev:
             haptic_pulse()
             self._last_pulse_time = now
@@ -159,6 +186,9 @@ class TumblingGyroGradient(Scene):
         pts3d = []
         for (x, y, z), t in circle_points(ring['radius']):
             X, Y, Z = rot_axis((x, y, z), ring['axis'], ring['angle'])
+            X += ring['offset'][0]
+            Y += ring['offset'][1]
+            Z += ring['offset'][2]
             px, py, pz = proj(X, Y, Z)
             pts3d.append((px + self.center.x, py + self.center.y, pz, t))
 
@@ -170,9 +200,74 @@ class TumblingGyroGradient(Scene):
             phase = (p0[3] / (2.0 * math.pi))
             if ring['shade_dir'] == -1:
                 phase = 1.0 - phase
-            alpha = (BACK_ALPHA + (FRONT_ALPHA - BACK_ALPHA) * phase) * (1.0 + 0.4 * pulse_strength)
-            stroke(ring['color'][0], ring['color'][1], ring['color'][2], min(1.0, alpha))
+            depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, p0[2] / max(1.0, ring['radius'])))
+            alpha = (BACK_ALPHA + (FRONT_ALPHA - BACK_ALPHA) * depth_mix) * (1.0 + 0.4 * pulse_strength)
+            shade = 0.6 + 0.25 * phase + 0.25 * depth_mix
+            stroke(
+                min(1.0, ring['color'][0] * shade),
+                min(1.0, ring['color'][1] * shade),
+                min(1.0, ring['color'][2] * shade),
+                min(1.0, alpha),
+            )
             line(p0[0], p0[1], p1[0], p1[1])
+
+        stroke_weight(max(1.0, LINE_THICKNESS * 0.7))
+        for i in range(n):
+            if (i + ring['glyph_phase']) % ring['glyph_stride'] != 0:
+                continue
+            p0 = pts3d[i]
+            p1 = pts3d[(i+1) % n]
+            depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, p0[2] / max(1.0, ring['radius'])))
+            if depth_mix < 0.35:
+                continue
+            shade = 0.9 + 0.2 * depth_mix
+            stroke(
+                min(1.0, ring['color'][0] * shade + 0.1),
+                min(1.0, ring['color'][1] * shade + 0.1),
+                min(1.0, ring['color'][2] * shade + 0.1),
+                min(1.0, 0.85 + 0.2 * pulse_strength),
+            )
+            line(p0[0], p0[1], p1[0], p1[1])
+
+    def draw_core(self, pulse_strength):
+        r = self.min_dim * 0.06
+        no_stroke()
+        for i in range(5):
+            t = i / 4.0
+            glow_r = r * (1.35 + t * 2.0 + 0.25 * pulse_strength)
+            alpha = 0.26 * (1.0 - t) ** 1.5
+            fill(CORE_GLOW[0], CORE_GLOW[1], CORE_GLOW[2], alpha)
+            ellipse(self.center.x - glow_r, self.center.y - glow_r, glow_r * 2, glow_r * 2)
+        fill(CORE_COLOR[0], CORE_COLOR[1], CORE_COLOR[2], 1.0)
+        ellipse(self.center.x - r, self.center.y - r, r * 2, r * 2)
+        highlight_r = r * 0.38
+        fill(1.0, 1.0, 1.0, 0.5)
+        ellipse(
+            self.center.x - r * 0.35 - highlight_r,
+            self.center.y - r * 0.35 - highlight_r,
+            highlight_r * 2,
+            highlight_r * 2,
+        )
+
+    def draw_aux_node(self):
+        if not self.rings:
+            return
+        orbit_r = self.rings[-1]['radius'] * 0.85
+        px, py, _ = proj(
+            orbit_r * math.cos(self.aux_phase),
+            orbit_r * 0.35 * math.sin(self.aux_phase * 0.7),
+            orbit_r * 0.6 * math.sin(self.aux_phase),
+        )
+        x = self.center.x + px
+        y = self.center.y + py
+        r = max(4.0, self.min_dim * 0.013)
+        no_stroke()
+        fill(ACCENT_TEAL[0], ACCENT_TEAL[1], ACCENT_TEAL[2], 0.16)
+        ellipse(x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8)
+        fill(ACCENT_TEAL[0], ACCENT_TEAL[1], ACCENT_TEAL[2], 0.6)
+        ellipse(x - r, y - r, r * 2, r * 2)
+        fill(0.95, 1.0, 1.0, 0.45)
+        ellipse(x - r * 0.32, y - r * 0.32, r * 0.64, r * 0.64)
 
     def draw(self):
         background(*BG)
@@ -180,6 +275,8 @@ class TumblingGyroGradient(Scene):
         pulse_strength = pulse_curve(now - self._last_pulse_time, length=0.3)
         for ring in self.rings:
             self.draw_ring(ring, pulse_strength)
+        self.draw_aux_node()
+        self.draw_core(pulse_strength)
 
     def touch_began(self, touch):
         self.paused = not self.paused

@@ -13,9 +13,16 @@
 # Tap anywhere else to pause/resume.
 
 import math
+import random
 import colorsys
 import scene
 import ui
+
+# Helios / Orbital Sun Core palette
+CORE_COLOR = (0.98, 0.99, 1.0)
+CORE_GLOW = (0.62, 0.8, 1.0)
+RING_GOLD = (0.93, 0.76, 0.30)
+ACCENT_TEAL = (0.18, 0.74, 0.7)
 
 
 def rot_x(p, a):
@@ -49,16 +56,21 @@ class Ring:
         self.spin = 0.0
         self.tilt_x = 0.0
         self.tilt_y = 0.0
+        self.offset = (0.0, 0.0, 0.0)
+        self.glyph_stride = 11
+        self.glyph_phase = 0
 
     def points3d(self):
         pts = []
         two_pi = 2.0 * math.pi
+        ox, oy, oz = self.offset
         for i in range(self.n):
             t = two_pi * i / self.n
             p = (self.R * math.cos(t), self.R * math.sin(t), 0.0)
             p = rot_z(p, self.spin)
             p = rot_x(p, self.tilt_x)
             p = rot_y(p, self.tilt_y)
+            p = (p[0] + ox, p[1] + oy, p[2] + oz)
             pts.append(p)
         return pts
 
@@ -70,24 +82,42 @@ class GyroPulseScene(scene.Scene):
         self.elapsed = 0.0
         self.paused = False
         self.zoom = 1.0
-        self.base_thickness = 3.0
-        self.bg_top = (0.03, 0.04, 0.10)
-        self.bg_bottom = (0.04, 0.07, 0.14)
+        self.base_thickness = 2.4
+        self.bg_top = (0.02, 0.03, 0.05)
+        self.bg_bottom = (0.04, 0.05, 0.09)
+        self.core_color = CORE_COLOR
+        self.core_glow_color = CORE_GLOW
+        self.accent_teal = ACCENT_TEAL
+        self.aux_orbit_speed = 0.22
+        self.aux_phase = 0.0
         self.buttons = []
         self._build_buttons()
         self.rings = []
         self._init_rings()
 
     # ---------- Ring setup ----------
+    @staticmethod
+    def _ring_offset(radius):
+        jitter = 0.06
+        return (
+            random.uniform(-jitter, jitter) * radius,
+            random.uniform(-jitter * 0.6, jitter * 0.6) * radius,
+            random.uniform(-jitter, jitter) * radius,
+        )
+
     def _make_ring(self, idx, R):
         sign = 1 if idx % 2 == 0 else -1
         spin_ratio = sign * (idx + 1)
         tx_ratio = sign * (idx + 1)
         ty_ratio = sign * (idx + 2)
-        hue = (0.16 * idx) % 1.0
-        color = colorsys.hsv_to_rgb(hue, 0.8, 1.0)
+        tone = 0.98 - 0.04 * (idx % 4)
+        color = tuple(min(1.0, c * tone) for c in RING_GOLD)
         n_pts = max(120, int(280 * R))
-        return Ring(R, color, n_points=n_pts, spin_ratio=spin_ratio, tx_ratio=tx_ratio, ty_ratio=ty_ratio)
+        ring = Ring(R, color, n_points=n_pts, spin_ratio=spin_ratio, tx_ratio=tx_ratio, ty_ratio=ty_ratio)
+        ring.offset = self._ring_offset(R)
+        ring.glyph_stride = random.choice([9, 11, 13])
+        ring.glyph_phase = random.randrange(ring.glyph_stride)
+        return ring
 
     def _init_rings(self):
         for idx, r in enumerate([1.0, 0.8, 0.62, 0.46]):
@@ -102,6 +132,8 @@ class GyroPulseScene(scene.Scene):
             r.tx_ratio = sign * (idx + 1)
             r.ty_ratio = sign * (idx + 2)
             r.base_radius = r.R
+            tone = 0.98 - 0.04 * (idx % 4)
+            r.color = tuple(min(1.0, c * tone) for c in RING_GOLD)
 
     def add_inner(self):
         if len(self.rings) >= 12:
@@ -185,19 +217,7 @@ class GyroPulseScene(scene.Scene):
         return (cx + u * scale_px, cy + v * scale_px)
 
     def _center_color(self):
-        if not self.rings:
-            return (1.0, 1.0, 1.0)
-        cols = []
-        wts = []
-        for r in self.rings:
-            cols.append(r.color)
-            wts.append(1.0 / max(0.1, r.R))
-        tot = sum(wts) or 1.0
-        return (
-            sum(c[0] * w for c, w in zip(cols, wts)) / tot,
-            sum(c[1] * w for c, w in zip(cols, wts)) / tot,
-            sum(c[2] * w for c, w in zip(cols, wts)) / tot,
-        )
+        return self.core_color
 
     # ---------- Scene loop ----------
     def update(self):
@@ -213,6 +233,8 @@ class GyroPulseScene(scene.Scene):
             r.spin = r.spin_ratio * r.speed_scale * phase
             r.tilt_x = r.tx_ratio * r.speed_scale * phase
             r.tilt_y = r.ty_ratio * r.speed_scale * phase
+
+        self.aux_phase = (self.aux_phase + dt * self.aux_orbit_speed) % (2.0 * math.pi)
 
     def draw(self):
         w, h = self.size
@@ -239,39 +261,89 @@ class GyroPulseScene(scene.Scene):
         alpha_boost += 0.9 * align_pulse
         glow_scale = 1.0 + 3.0 * align_pulse
 
-        # Draw rings
-        scene.stroke_weight(self.base_thickness * thickness_scale)
-        for ring in self.rings:
-            pts3d = ring.points3d()
-            pts2d = [self._project(p) for p in pts3d]
-
-            r, g, b = ring.color
-            a = min(1.0, max(0.1, 0.4 + alpha_boost))
-
-            # Glow stroke
-            scene.stroke(r, g, b, min(1.0, a * 0.4 * glow_scale))
-            scene.stroke_weight(self.base_thickness * thickness_scale * 2.0)
-            for i in range(len(pts2d)):
-                x0, y0 = pts2d[i]
-                x1, y1 = pts2d[(i + 1) % len(pts2d)]
-                scene.line(x0, y0, x1, y1)
-
-            # Core stroke
-            scene.stroke(r, g, b, a)
-            scene.stroke_weight(self.base_thickness * thickness_scale)
-            for i in range(len(pts2d)):
-                x0, y0 = pts2d[i]
-                x1, y1 = pts2d[(i + 1) % len(pts2d)]
-                scene.line(x0, y0, x1, y1)
-
-        # Center sphere
-        base_c = self._center_color()
+        # Core glow (behind rings)
         cx, cy = w * 0.5, h * 0.5
         rad = min(w, h) * 0.06 * self.zoom
-        scene.fill(base_c[0], base_c[1], base_c[2], 0.8)
-        scene.stroke(base_c[0] * 0.6, base_c[1] * 0.6, base_c[2] * 0.6, 0.9)
-        scene.stroke_weight(2)
+        scene.no_stroke()
+        for i in range(5):
+            t = i / 4.0
+            glow_r = rad * (1.35 + t * 2.0 + 0.25 * align_pulse)
+            alpha = 0.26 * (1.0 - t) ** 1.5
+            scene.fill(self.core_glow_color[0], self.core_glow_color[1], self.core_glow_color[2], alpha)
+            scene.ellipse(cx - glow_r, cy - glow_r, glow_r * 2, glow_r * 2)
+
+        # Draw rings
+        for ring in self.rings:
+            pts3d = ring.points3d()
+            pts2d = []
+            for p in pts3d:
+                x, y = self._project(p)
+                pts2d.append((x, y, p[2]))
+            base_r, base_g, base_b = ring.color
+
+            scene.stroke_weight(self.base_thickness * thickness_scale * 2.0)
+            for i in range(len(pts2d)):
+                x0, y0, z0 = pts2d[i]
+                x1, y1, z1 = pts2d[(i + 1) % len(pts2d)]
+                depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, z0 / max(0.0001, ring.R)))
+                shade = 0.68 + 0.32 * depth_mix
+                scene.stroke(base_r * shade, base_g * shade, base_b * shade, min(1.0, 0.2 * glow_scale))
+                scene.line(x0, y0, x1, y1)
+
+            scene.stroke_weight(self.base_thickness * thickness_scale)
+            for i in range(len(pts2d)):
+                x0, y0, z0 = pts2d[i]
+                x1, y1, z1 = pts2d[(i + 1) % len(pts2d)]
+                depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, z0 / max(0.0001, ring.R)))
+                shade = 0.72 + 0.28 * depth_mix
+                alpha = min(1.0, 0.5 + 0.45 * depth_mix + alpha_boost)
+                scene.stroke(base_r * shade, base_g * shade, base_b * shade, alpha)
+                scene.line(x0, y0, x1, y1)
+
+            scene.stroke_weight(self.base_thickness * thickness_scale * 0.7)
+            for i in range(len(pts2d)):
+                if (i + ring.glyph_phase) % ring.glyph_stride != 0:
+                    continue
+                x0, y0, z0 = pts2d[i]
+                x1, y1, z1 = pts2d[(i + 1) % len(pts2d)]
+                depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, z0 / max(0.0001, ring.R)))
+                if depth_mix < 0.35:
+                    continue
+                shade = 0.92 + 0.2 * depth_mix
+                scene.stroke(
+                    min(1.0, base_r * shade + 0.1),
+                    min(1.0, base_g * shade + 0.1),
+                    min(1.0, base_b * shade + 0.1),
+                    min(1.0, 0.9 + alpha_boost),
+                )
+                scene.line(x0, y0, x1, y1)
+
+        # Auxiliary node
+        if self.rings:
+            orbit_r = self.rings[0].R * 0.9
+            pos = (
+                orbit_r * math.cos(self.aux_phase),
+                orbit_r * 0.35 * math.sin(self.aux_phase * 0.7),
+                orbit_r * 0.6 * math.sin(self.aux_phase),
+            )
+            ax, ay = self._project(pos)
+            node_r = max(4.0, rad * 0.3)
+            scene.no_stroke()
+            scene.fill(self.accent_teal[0], self.accent_teal[1], self.accent_teal[2], 0.16)
+            scene.ellipse(ax - node_r * 2.4, ay - node_r * 2.4, node_r * 4.8, node_r * 4.8)
+            scene.fill(self.accent_teal[0], self.accent_teal[1], self.accent_teal[2], 0.6)
+            scene.ellipse(ax - node_r, ay - node_r, node_r * 2, node_r * 2)
+            scene.fill(0.95, 1.0, 1.0, 0.45)
+            scene.ellipse(ax - node_r * 0.32, ay - node_r * 0.32, node_r * 0.64, node_r * 0.64)
+
+        # Core body
+        scene.no_stroke()
+        scene.fill(self.core_color[0], self.core_color[1], self.core_color[2], 1.0)
         scene.ellipse(cx - rad, cy - rad, rad * 2, rad * 2)
+        highlight_r = rad * 0.38
+        scene.fill(1.0, 1.0, 1.0, 0.5)
+        scene.ellipse(cx - rad * 0.35 - highlight_r, cy - rad * 0.35 - highlight_r,
+                      highlight_r * 2, highlight_r * 2)
 
         # HUD buttons
         for btn in self.buttons:

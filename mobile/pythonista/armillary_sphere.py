@@ -202,6 +202,12 @@ STARS = 800
 
 G_GLYPH_FREQ = 40.0
 
+# Helios / Orbital Sun Core palette
+CORE_COLOR = (0.98, 0.99, 1.0)
+CORE_GLOW = (0.62, 0.8, 1.0)
+RING_GOLD = (0.93, 0.76, 0.30)
+ACCENT_TEAL = (0.18, 0.74, 0.7)
+
 class ArmillaryScene(scene.Scene):
     def setup(self):
         self.start_time = time.time()
@@ -325,8 +331,55 @@ class ArmillaryScene(scene.Scene):
             path.line_to(pts[2][0], pts[2][1])
             path.line_to(pts[3][0], pts[3][1])
             path.close()
-            scene.fill(shade * 0.8, shade * 0.78, shade * 0.75)
+            scene.fill(
+                min(1.0, RING_GOLD[0] * shade),
+                min(1.0, RING_GOLD[1] * shade),
+                min(1.0, RING_GOLD[2] * shade),
+            )
             path.fill()
+
+        # Core glow + body
+        core_x, core_y, _ = project_point((0.0, 0.0, 0.0), view, proj, w, h)
+        base_r = min(w, h) * 0.04
+        for i in range(5):
+            t = i / 4.0
+            glow_r = base_r * (1.35 + t * 2.0)
+            alpha = 0.26 * (1.0 - t) ** 1.5
+            path = scene.Path.oval(core_x - glow_r, core_y - glow_r, glow_r * 2, glow_r * 2)
+            scene.fill(CORE_GLOW[0], CORE_GLOW[1], CORE_GLOW[2], alpha)
+            path.fill()
+
+        core_path = scene.Path.oval(core_x - base_r, core_y - base_r, base_r * 2, base_r * 2)
+        scene.fill(CORE_COLOR[0], CORE_COLOR[1], CORE_COLOR[2], 1.0)
+        core_path.fill()
+
+        highlight_r = base_r * 0.38
+        highlight_path = scene.Path.oval(
+            core_x - base_r * 0.35 - highlight_r,
+            core_y - base_r * 0.35 - highlight_r,
+            highlight_r * 2,
+            highlight_r * 2,
+        )
+        scene.fill(1.0, 1.0, 1.0, 0.5)
+        highlight_path.fill()
+
+        # Auxiliary node
+        orbit_t = time.time() - self.start_time
+        orbit_r = RING_RADII[-1] * 0.85
+        node_pos = (
+            orbit_r * math.cos(orbit_t * 0.4),
+            orbit_r * 0.3 * math.sin(orbit_t * 0.28),
+            orbit_r * 0.55 * math.sin(orbit_t * 0.4),
+        )
+        node_x, node_y, _ = project_point(node_pos, view, proj, w, h)
+        node_r = max(4.0, base_r * 0.3)
+        glow_path = scene.Path.oval(node_x - node_r * 2.6, node_y - node_r * 2.6,
+                                    node_r * 5.2, node_r * 5.2)
+        scene.fill(ACCENT_TEAL[0], ACCENT_TEAL[1], ACCENT_TEAL[2], 0.16)
+        glow_path.fill()
+        node_path = scene.Path.oval(node_x - node_r, node_y - node_r, node_r * 2, node_r * 2)
+        scene.fill(ACCENT_TEAL[0], ACCENT_TEAL[1], ACCENT_TEAL[2], 0.6)
+        node_path.fill()
 
 # --- Utility --------------------------------------------------------------
 

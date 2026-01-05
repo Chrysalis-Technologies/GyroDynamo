@@ -5,6 +5,13 @@ import time
 import colorsys
 import pygame
 
+# Helios / Orbital Sun Core palette
+CORE_COLOR = (0.98, 0.99, 1.0)
+CORE_GLOW = (0.62, 0.8, 1.0)
+RING_GOLD = (0.93, 0.76, 0.30)
+ACCENT_TEAL = (0.18, 0.74, 0.7)
+GOLD_HUE, GOLD_SAT, GOLD_VAL = colorsys.rgb_to_hsv(*RING_GOLD)
+
 
 # 3D rotation helpers
 def rot_x(p, a):
@@ -27,17 +34,20 @@ def rot_z(p, a):
 
 class GyroRing:
     def __init__(self, radius, color, n_points=240,
-                 spin_ratio=1, tx_ratio=1, ty_ratio=1):
+                 spin_ratio=1, tx_ratio=1, ty_ratio=1, offset=None):
         self.base_radius = radius
         self.R = radius
         self.color = color  # (r,g,b) 0..1
         self.n = n_points
         self.speed_scale = 1.0
         self.thickness_scale = 1.0
+        self.offset = offset if offset is not None else (0.0, 0.0, 0.0)
         h, s, v = colorsys.rgb_to_hsv(*color)
         self.hue = h
         self.saturation = s
         self.value = v
+        self.glyph_stride = random.choice([9, 11, 13])
+        self.glyph_phase = random.randrange(self.glyph_stride)
 
         # Orientation state
         self.tilt_x = 0.0
@@ -52,12 +62,14 @@ class GyroRing:
     def ring_points_3d(self):
         pts = []
         two_pi = 2.0 * math.pi
+        ox, oy, oz = self.offset
         for i in range(self.n):
             t = two_pi * i / self.n
             p = (self.R * math.cos(t), self.R * math.sin(t), 0.0)
             p = rot_z(p, self.spin)
             p = rot_x(p, self.tilt_x)
             p = rot_y(p, self.tilt_y)
+            p = (p[0] + ox, p[1] + oy, p[2] + oz)
             pts.append(p)
         return pts
 
@@ -89,15 +101,20 @@ class GyroPulse:
         self.cam_dist = 3.5
         self.focal_len = 1.0
         self.cam_orbit_amp = 0.06
-        self.cam_orbit_speed = 0.18
+        self.cam_orbit_speed = 0.14
+        self.light_dir = self._normalize((0.2, 0.35, 1.0))
 
         # Visual settings
-        self.base_thickness = 4.5
+        self.base_thickness = 3.2
         self.back_alpha = 0.35
         self.front_alpha = 0.98
-        self.glow_alpha = 0.16
-        self.bg_top = (8, 10, 22)
-        self.bg_bottom = (10, 18, 36)
+        self.glow_alpha = 0.14
+        self.bg_top = (6, 8, 16)
+        self.bg_bottom = (10, 14, 26)
+        self.core_color = CORE_COLOR
+        self.core_glow_color = CORE_GLOW
+        self.accent_teal = ACCENT_TEAL
+        self.aux_orbit_speed = 0.22
 
         # Rings (alternate directions for variety)
         self.rings = []
@@ -124,6 +141,19 @@ class GyroPulse:
     def _dot(a, b):
         return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
 
+    @staticmethod
+    def _clamp01(value):
+        return max(0.0, min(1.0, value))
+
+    @staticmethod
+    def _ring_offset(radius):
+        jitter = 0.06
+        return (
+            random.uniform(-jitter, jitter) * radius,
+            random.uniform(-jitter * 0.6, jitter * 0.6) * radius,
+            random.uniform(-jitter, jitter) * radius,
+        )
+
     def _build_background(self):
         grad_col = pygame.Surface((1, self.height))
         for y in range(self.height):
@@ -140,11 +170,12 @@ class GyroPulse:
         spin_ratio = sign * (index + 1)
         tx_ratio = sign * (index + 1)
         ty_ratio = sign * (index + 2)
-        hue = (0.16 * index) % 1.0
-        color = colorsys.hsv_to_rgb(hue, 0.78, 1.0)
+        tone = 0.98 - 0.04 * (index % 4)
+        color = tuple(min(1.0, c * tone) for c in RING_GOLD)
         n_points = max(160, int(360 * radius))
         ring = GyroRing(radius, color, n_points=n_points,
-                        spin_ratio=spin_ratio, tx_ratio=tx_ratio, ty_ratio=ty_ratio)
+                        spin_ratio=spin_ratio, tx_ratio=tx_ratio, ty_ratio=ty_ratio,
+                        offset=self._ring_offset(radius))
         ring.speed_scale = 1.0
         return ring
 
@@ -161,8 +192,8 @@ class GyroPulse:
             ring.spin_ratio = sign * (idx + 1)
             ring.tx_ratio = sign * (idx + 1)
             ring.ty_ratio = sign * (idx + 2)
-            hue = (0.16 * idx) % 1.0
-            ring.color = colorsys.hsv_to_rgb(hue, 0.78, 1.0)
+            tone = 0.98 - 0.04 * (idx % 4)
+            ring.color = tuple(min(1.0, c * tone) for c in RING_GOLD)
             h, s, v = colorsys.rgb_to_hsv(*ring.color)
             ring.hue, ring.saturation, ring.value = h, s, v
             ring.base_radius = ring.R
@@ -198,31 +229,13 @@ class GyroPulse:
 
     # Center sphere
     def _center_palette(self):
-        """Return weighted average color and a palette of key ring colors (outer/mid/inner)."""
-        if not self.rings:
-            return (1.0, 1.0, 1.0), [(1.0, 1.0, 1.0)]
-        weights = []
-        cols = []
-        for ring in self.rings:
-            w = 1.0 / max(0.1, ring.R)
-            weights.append(w)
-            cols.append(ring.current_color())
-        tot_w = sum(weights) or 1.0
-        base = (
-            sum(c[0]*w for c, w in zip(cols, weights)) / tot_w,
-            sum(c[1]*w for c, w in zip(cols, weights)) / tot_w,
-            sum(c[2]*w for c, w in zip(cols, weights)) / tot_w,
-        )
-        palette = []
-        palette.append(self.rings[0].current_color())
-        if len(self.rings) > 2:
-            palette.append(self.rings[len(self.rings)//2].current_color())
-        palette.append(self.rings[-1].current_color())
+        """Return core palette (white-hot) independent of rings."""
+        base = self.core_color
+        palette = [self.core_color, (1.0, 1.0, 1.0)]
         return base, palette
 
     def draw_center_sphere(self, surface, glow_surface):
-        base_color, palette = self._center_palette()
-        base_rgb = tuple(int(max(0.0, min(1.0, c)) * 255) for c in base_color)
+        _, palette = self._center_palette()
         radius_px = int(min(self.width, self.height) * 0.07 * self.zoom_scale)
         if self.rings:
             inner = self.rings[-1]
@@ -235,31 +248,50 @@ class GyroPulse:
         center = (radius_px, radius_px)
 
         # Layered body using palette colors to mimic reflective pickup of ring hues.
-        layers = max(3, len(palette) + 1)
+        layers = max(4, len(palette) + 2)
         for i in range(layers):
             t = i / float(layers - 1)
             col_idx = min(len(palette) - 1, int(t * len(palette)))
             tint = palette[col_idx]
             tint_rgb = tuple(int(max(0.0, min(1.0, c)) * 255) for c in tint)
-            alpha = int(200 * (1.0 - t) ** 1.4)
-            radius = int(radius_px * (1.0 - 0.08 * i))
+            alpha = int(245 * (1.0 - t) ** 1.5)
+            radius = int(radius_px * (1.0 - 0.09 * i))
             pygame.draw.circle(sphere, tint_rgb + (alpha,), center, radius)
 
         # Specular highlight
-        highlight_col = (255, 255, 255, 140)
+        highlight_col = (255, 255, 255, 150)
         pygame.draw.circle(sphere, highlight_col,
                            (int(radius_px * 0.42), int(radius_px * 0.42)),
                            int(radius_px * 0.32))
 
-        # Rim that tracks average color
-        rim_col = tuple(int(c * 0.6) for c in base_rgb) + (220,)
-        pygame.draw.circle(sphere, rim_col, center, radius_px, width=2)
-
         surface.blit(sphere, (self.cx - radius_px, self.cy - radius_px))
 
         # Glow also tinted with palette average
-        glow_col = base_rgb + (110,)
-        pygame.draw.circle(glow_surface, glow_col, (int(self.cx), int(self.cy)), int(radius_px * 1.5))
+        glow_rgb = tuple(int(c * 255) for c in self.core_glow_color)
+        for scale, alpha in ((1.6, 160), (2.2, 90), (2.9, 50)):
+            pygame.draw.circle(
+                glow_surface,
+                glow_rgb + (alpha,),
+                (int(self.cx), int(self.cy)),
+                int(radius_px * scale),
+            )
+
+    def draw_aux_node(self, surface, glow_surface):
+        if not self.rings:
+            return
+        t = self.elapsed * self.aux_orbit_speed
+        orbit_r = self.rings[0].R * 0.9
+        pos = (
+            orbit_r * math.cos(t),
+            orbit_r * 0.35 * math.sin(t * 0.7),
+            orbit_r * 0.6 * math.sin(t),
+        )
+        x, y = self.project(pos)
+        radius = int(min(self.width, self.height) * 0.012 * self.zoom_scale)
+        teal_rgb = tuple(int(c * 255) for c in self.accent_teal)
+        pygame.draw.circle(glow_surface, teal_rgb + (50,), (int(x), int(y)), int(radius * 2.8))
+        pygame.draw.circle(glow_surface, teal_rgb + (90,), (int(x), int(y)), int(radius * 1.6))
+        pygame.draw.circle(surface, teal_rgb + (200,), (int(x), int(y)), max(2, radius))
 
     # Tempo helpers
     def bar_omega(self):
@@ -285,10 +317,6 @@ class GyroPulse:
 
         base_omega = 2.0 * math.pi / self.reset_period
 
-        # Modulate hue gently
-        for idx, ring in enumerate(self.rings):
-            ring.hue = (ring.hue + dt * 0.03 * (1 + 0.2 * idx)) % 1.0
-
         # Continuous spin/tilt that realigns every reset_period (integer turns per period).
         for ring in self.rings:
             phase = base_omega * self.elapsed
@@ -313,26 +341,56 @@ class GyroPulse:
             mid = ((p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5, z_avg)
             x0, y0 = self.project(p0)
             x1, y1 = self.project(p1)
-            segments.append((z_avg, mid, x0, y0, x1, y1))
+            segments.append((z_avg, mid, i, x0, y0, x1, y1))
         segments.sort(key=lambda s: s[0])
 
         base_color = ring.current_color()
-        base_rgb = tuple(max(0, min(255, int(c * 255))) for c in base_color)
         base_thickness = max(1.0, self.base_thickness * thickness_scale * ring.thickness_scale)
         thickness_px = max(1, int(base_thickness))
         glow_thickness_px = max(1, int(thickness_px * 2.2))
 
-        for _, mid, x0, y0, x1, y1 in segments:
+        clamp255 = lambda v: max(0, min(255, int(v)))
+        for _, mid, _, x0, y0, x1, y1 in segments:
             depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, mid[2]))  # [-1,1] -> [0,1]
+            light = max(0.0, self._dot(self._normalize(mid), self.light_dir))
+            shade = 0.7 + 0.2 * depth_mix + 0.25 * light
             alpha = self.back_alpha + (self.front_alpha - self.back_alpha) * depth_mix + alpha_boost
             alpha = max(0.0, min(1.0, alpha))
-            rgba = base_rgb + (int(alpha * 255),)
+            rgba = (
+                clamp255(base_color[0] * shade * 255),
+                clamp255(base_color[1] * shade * 255),
+                clamp255(base_color[2] * shade * 255),
+                int(alpha * 255),
+            )
 
             glow_a = min(1.0, self.glow_alpha * (0.8 + 0.6 * depth_mix) * glow_scale)
-            glow_color = base_rgb + (int(glow_a * 255),)
+            glow_color = (
+                clamp255(base_color[0] * shade * 255),
+                clamp255(base_color[1] * shade * 255),
+                clamp255(base_color[2] * shade * 255),
+                int(glow_a * 255),
+            )
 
             pygame.draw.line(glow_surface, glow_color, (x0, y0), (x1, y1), glow_thickness_px)
             pygame.draw.line(surface, rgba, (x0, y0), (x1, y1), thickness_px)
+
+        glyph_thickness = max(1, int(thickness_px * 0.7))
+        for _, mid, idx, x0, y0, x1, y1 in segments:
+            if (idx + ring.glyph_phase) % ring.glyph_stride != 0:
+                continue
+            depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, mid[2]))
+            if depth_mix < 0.35:
+                continue
+            light = max(0.0, self._dot(self._normalize(mid), self.light_dir))
+            shade = 0.9 + 0.2 * depth_mix + 0.2 * light
+            alpha = min(1.0, self.front_alpha + alpha_boost + 0.2)
+            glyph_color = (
+                clamp255(base_color[0] * shade * 255 + 15),
+                clamp255(base_color[1] * shade * 255 + 15),
+                clamp255(base_color[2] * shade * 255 + 15),
+                int(alpha * 255),
+            )
+            pygame.draw.line(surface, glyph_color, (x0, y0), (x1, y1), glyph_thickness)
 
     def draw(self):
         if self.bg_surface:
@@ -365,6 +423,7 @@ class GyroPulse:
                            alpha_boost=alpha_boost,
                            glow_scale=glow_scale)
 
+        self.draw_aux_node(layer, glow_layer)
         self.draw_center_sphere(layer, glow_layer)
         self.screen.blit(glow_layer, (0, 0))
         self.screen.blit(layer, (0, 0))
