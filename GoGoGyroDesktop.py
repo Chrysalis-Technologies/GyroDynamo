@@ -3,7 +3,15 @@ import random
 import argparse
 import time
 import colorsys
-import pygame
+import sys
+
+try:
+    import pygame
+except Exception as exc:
+    pygame = None
+    _PYGAME_IMPORT_ERROR = exc
+else:
+    _PYGAME_IMPORT_ERROR = None
 
 # Helios / Orbital Sun Core palette
 CORE_COLOR = (0.98, 0.99, 1.0)
@@ -15,6 +23,30 @@ GOLD_HUE, GOLD_SAT, GOLD_VAL = colorsys.rgb_to_hsv(*RING_GOLD)
 GOLD_HUE_RANGE = 0.05
 GOLD_SAT_RANGE = 0.18
 GOLD_VAL_RANGE = 0.12
+COIN_PRECESS_RATIO = 0.12
+SPEED_SMOOTHING = 4.0
+
+PALETTE_PRESETS = [
+    ("Solar Gold", [RING_GOLD, (1.0, 0.93, 0.78), (0.82, 0.62, 0.24)]),
+    ("Teal Signal", [RING_GOLD, ACCENT_TEAL, (0.75, 0.88, 1.0)]),
+    ("Copper Ember", [(0.9, 0.58, 0.28), (0.82, 0.44, 0.22), (0.98, 0.76, 0.34)]),
+    ("Ivory Halo", [(0.98, 0.98, 1.0), (0.93, 0.88, 0.74), (0.86, 0.68, 0.28)]),
+    ("Auric Prism", [(0.9, 0.75, 0.3), (0.7, 0.85, 0.95), (0.3, 0.7, 0.7), (0.95, 0.9, 0.6)]),
+]
+
+
+def _report_launch_error(message):
+    print(message, file=sys.stderr)
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("GoGoGyro Desktop", message)
+        root.destroy()
+    except Exception:
+        pass
 
 
 class Slider:
@@ -118,8 +150,13 @@ class GyroRing:
         self.hue = h
         self.saturation = s
         self.value = v
+        self.band_count = random.randint(2, 5)
+        self.palette_index = 0
+        self.band_phase = random.randrange(self.n)
+        self.band_colors = []
         self.glyph_stride = random.choice([9, 11, 13])
         self.glyph_phase = random.randrange(self.glyph_stride)
+        self.precession_ratio = 0.0
 
         # Orientation state
         self.tilt_x = random.uniform(-0.3, 0.3)
@@ -130,13 +167,14 @@ class GyroRing:
         self.spin_ratio = spin_ratio
         self.tx_ratio = tx_ratio
         self.ty_ratio = ty_ratio
+        self.refresh_band_colors()
 
     def update(self, dt, omega_bar):
         # Lock angular velocities to multiples of the bar angular frequency.
         scaled = self.speed_scale * omega_bar
         self.spin += (self.spin_ratio * scaled) * dt
         self.tilt_x += (self.tx_ratio * scaled) * dt
-        self.tilt_y += (self.ty_ratio * scaled) * dt
+        self.tilt_y += ((self.ty_ratio + self.precession_ratio) * scaled) * dt
 
     def ring_points_3d(self):
         pts = []
@@ -155,6 +193,48 @@ class GyroRing:
     def current_color(self):
         r, g, b = colorsys.hsv_to_rgb(self.hue % 1.0, self.saturation, self.value)
         return (r, g, b)
+
+    def refresh_band_colors(self):
+        self.band_colors = []
+        band_count = max(2, int(self.band_count))
+        preset_index = max(0, min(int(self.palette_index), len(PALETTE_PRESETS) - 1))
+        palette = PALETTE_PRESETS[preset_index][1]
+        if not palette:
+            palette = [self.current_color()]
+
+        if band_count == 1:
+            self.band_colors = [palette[0]]
+            return
+
+        if len(palette) == 1:
+            self.band_colors = [palette[0]] * band_count
+            return
+
+        max_idx = len(palette) - 1
+        for band in range(band_count):
+            t = band / float(band_count - 1)
+            pos = t * max_idx
+            idx0 = int(math.floor(pos))
+            idx1 = min(max_idx, idx0 + 1)
+            frac = pos - idx0
+            c0 = palette[idx0]
+            c1 = palette[idx1]
+            blended = (
+                c0[0] + (c1[0] - c0[0]) * frac,
+                c0[1] + (c1[1] - c0[1]) * frac,
+                c0[2] + (c1[2] - c0[2]) * frac,
+            )
+            self.band_colors.append(blended)
+
+    def segment_color(self, idx):
+        if not self.band_colors:
+            self.refresh_band_colors()
+        n = max(1, self.n)
+        offset_idx = (idx + self.band_phase) % n
+        band = int((offset_idx / n) * self.band_count)
+        if band >= self.band_count:
+            band = self.band_count - 1
+        return self.band_colors[band]
 
 # ========================
 # Desktop application using pygame
@@ -193,11 +273,8 @@ class GoGoGyroDesktop:
         # rich polyrhythms emerge within the bar but realign each measure.
         ring_specs = [
             (1.06, 320, 5, 2, 3),
-            (0.84, 280, 7, 3, 5),
-            (0.62, 240, 9, 4, 7),
-            (0.44, 200, 11, 5, 9),
         ]
-        tones = [1.0, 0.95, 0.9, 0.84]
+        tones = [1.0]
         self.rings = []
         for idx, (radius, n_points, spin_ratio, tx_ratio, ty_ratio) in enumerate(ring_specs):
             tone = tones[idx % len(tones)]
@@ -214,6 +291,7 @@ class GoGoGyroDesktop:
                     offset=offset,
                 )
             )
+        self._lock_inner_ring()
 
         # Drawing params
         self.base_thickness = 3.2
@@ -226,6 +304,8 @@ class GoGoGyroDesktop:
         self.ring_controls = []
         self.all_sliders = []
         self.buttons = []
+        self.ring_tabs = []
+        self.active_ring_idx = 0
         self.button_bottom = 120
         self.resize(width, height, rebuild=True)
 
@@ -240,6 +320,18 @@ class GoGoGyroDesktop:
     @staticmethod
     def _dot(a, b):
         return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+    @staticmethod
+    def _offset_line(x0, y0, x1, y1, offset):
+        dx = x1 - x0
+        dy = y1 - y0
+        length = math.hypot(dx, dy)
+        if length < 1e-6:
+            return None
+        nx = -dy / length
+        ny = dx / length
+        return (x0 + nx * offset, y0 + ny * offset,
+                x1 + nx * offset, y1 + ny * offset)
 
     @staticmethod
     def _clamp01(value):
@@ -266,7 +358,8 @@ class GoGoGyroDesktop:
                 'size': controls['size'].value,
                 'speed': controls['speed'].value,
                 'thickness': controls['thickness'].value,
-                'color': controls['color'].value,
+                'bands': controls['bands'].value,
+                'palette': controls['palette'].value,
             }
             for controls in self.ring_controls
         ]
@@ -285,6 +378,7 @@ class GoGoGyroDesktop:
         self.scale_px = min(self.draw_width, self.height) * 0.48
         self._build_background()
         self._build_buttons()
+        self._build_ring_tabs()
         self._build_sliders(slider_state)
 
     def _build_sliders(self, slider_state=None):
@@ -296,21 +390,12 @@ class GoGoGyroDesktop:
         start_y = max(150, int(self.button_bottom + 22))
         available_height = max(100, self.height - start_y - 20)
 
-        # Fit all ring control blocks within the panel by adapting their height
-        # based on how many rings exist.
-        slider_count = 4
-        block_height = available_height / max(1, len(self.rings))
-        block_height = min(240.0, block_height)  # keep roomy when few rings
-
-        # Leave room for header + padding (~26 px budget)
-        slider_height = max(10.0, min(42.0, (block_height - 26.0) / slider_count))
-        slider_gap = max(2.0, (block_height - slider_count * slider_height - 16.0) / max(1, slider_count - 1))
-        section_gap = block_height
+        slider_count = 5
+        slider_height = 34
+        slider_gap = 10
 
         for idx, ring in enumerate(self.rings):
-            section_y = int(start_y + idx * section_gap)
-
-            slider_y = section_y + 22  # leave space for header
+            slider_y = start_y + 28
 
             size_rect = (panel_x, int(slider_y), slider_width, int(slider_height))
             speed_rect = (
@@ -325,9 +410,15 @@ class GoGoGyroDesktop:
                 slider_width,
                 int(slider_height),
             )
-            color_rect = (
+            bands_rect = (
                 panel_x,
                 int(slider_y + 3 * (slider_height + slider_gap)),
+                slider_width,
+                int(slider_height),
+            )
+            palette_rect = (
+                panel_x,
+                int(slider_y + 4 * (slider_height + slider_gap)),
                 slider_width,
                 int(slider_height),
             )
@@ -335,32 +426,38 @@ class GoGoGyroDesktop:
             size_val = 1.0
             speed_val = 1.0
             thickness_val = 1.0
-            hue_val = (ring.hue % 1.0) * 360.0
+            bands_val = ring.band_count
+            palette_val = ring.palette_index
             if slider_state and idx < len(slider_state):
                 state = slider_state[idx]
                 size_val = state.get('size', size_val)
                 speed_val = state.get('speed', speed_val)
                 thickness_val = state.get('thickness', thickness_val)
-                hue_val = state.get('color', hue_val)
+                bands_val = state.get('bands', bands_val)
+                palette_val = state.get('palette', palette_val)
 
             size_slider = Slider(size_rect, "Size", value=size_val, min_value=0.4, max_value=1.6,
                                  value_format="{label}: {value:.2f}x")
             speed_slider = Slider(speed_rect, "Speed", value=speed_val, min_value=0.2, max_value=3.0)
             thickness_slider = Slider(thickness_rect, "Thickness", value=thickness_val,
                                       min_value=0.3, max_value=3.0)
-            color_slider = Slider(color_rect, "Hue", value=hue_val, min_value=0.0, max_value=360.0,
-                                  value_format="{label}: {value:.0f}°")
+            bands_slider = Slider(bands_rect, "Bands", value=bands_val, min_value=2, max_value=5,
+                                  value_format="{label}: {value:.0f}")
+            palette_slider = Slider(palette_rect, "Palette", value=palette_val,
+                                    min_value=0, max_value=max(0, len(PALETTE_PRESETS) - 1),
+                                    value_format="{label}: {value:.0f}")
 
             control_group = {
                 'size': size_slider,
                 'speed': speed_slider,
                 'thickness': thickness_slider,
-                'color': color_slider,
-                'section_top': section_y,
-                'block_height': block_height,
+                'bands': bands_slider,
+                'palette': palette_slider,
+                'section_top': start_y,
+                'block_height': available_height,
             }
             self.ring_controls.append(control_group)
-            self.all_sliders.extend([size_slider, speed_slider, thickness_slider, color_slider])
+            self.all_sliders.extend([size_slider, speed_slider, thickness_slider, bands_slider, palette_slider])
 
     def _build_background(self):
         grad_col = pygame.Surface((1, self.height))
@@ -412,6 +509,35 @@ class GoGoGyroDesktop:
 
         self.button_bottom = ring_y + ring_h
 
+    def _build_ring_tabs(self):
+        self.ring_tabs = []
+        if self.rings:
+            self.active_ring_idx = max(0, min(self.active_ring_idx, len(self.rings) - 1))
+        else:
+            self.active_ring_idx = 0
+        panel_x = self.draw_width + 16
+        panel_w = self.ui_panel_width - 32
+        tab_h = 24
+        tab_gap = 6
+        tab_w = 46
+        tabs_per_row = max(1, int((panel_w + tab_gap) // (tab_w + tab_gap)))
+        start_y = self.button_bottom + 12
+        row = 0
+        col = 0
+        for idx in range(len(self.rings)):
+            x = panel_x + col * (tab_w + tab_gap)
+            y = start_y + row * (tab_h + tab_gap)
+            self.ring_tabs.append({
+                'index': idx,
+                'rect': pygame.Rect(x, y, tab_w, tab_h),
+            })
+            col += 1
+            if col >= tabs_per_row:
+                col = 0
+                row += 1
+        if self.ring_tabs:
+            self.button_bottom = start_y + (row + 1) * tab_h + row * tab_gap
+
     def add_ring(self):
         slider_state = self._capture_slider_state()
         count = len(self.rings)
@@ -441,14 +567,17 @@ class GoGoGyroDesktop:
             offset=self._ring_offset(radius),
         )
         self.rings.append(new_ring)
+        self.active_ring_idx = len(self.rings) - 1
 
         slider_state.append({
             'size': 1.0,
             'speed': 1.0,
             'thickness': 1.0,
-            'color': (new_ring.hue % 1.0) * 360.0,
+            'bands': new_ring.band_count,
+            'palette': new_ring.palette_index,
         })
         self._assign_ratios()
+        self._build_ring_tabs()
         self._build_sliders(slider_state)
 
     def add_outer_ring(self):
@@ -472,13 +601,16 @@ class GoGoGyroDesktop:
             offset=self._ring_offset(radius),
         )
         self.rings.insert(0, new_ring)
+        self.active_ring_idx = 0
         slider_state.insert(0, {
             'size': 1.0,
             'speed': 1.0,
             'thickness': 1.0,
-            'color': (new_ring.hue % 1.0) * 360.0,
+            'bands': new_ring.band_count,
+            'palette': new_ring.palette_index,
         })
         self._assign_ratios()
+        self._build_ring_tabs()
         self._build_sliders(slider_state)
 
     def remove_ring(self):
@@ -487,7 +619,9 @@ class GoGoGyroDesktop:
         slider_state = self._capture_slider_state()
         self.rings.pop()
         slider_state = slider_state[:-1]
+        self.active_ring_idx = min(self.active_ring_idx, len(self.rings) - 1)
         self._assign_ratios()
+        self._build_ring_tabs()
         self._build_sliders(slider_state)
 
     def _assign_ratios(self):
@@ -496,6 +630,23 @@ class GoGoGyroDesktop:
             ring.spin_ratio = 5 + 2 * idx
             ring.tx_ratio = 2 + idx
             ring.ty_ratio = 3 + 2 * idx
+        self._lock_inner_ring()
+
+    def _lock_inner_ring(self):
+        if not self.rings:
+            return
+        for ring in self.rings:
+            ring.precession_ratio = 0.0
+        inner = self.rings[-1]
+        flip_ratio = abs(inner.spin_ratio) if abs(inner.spin_ratio) > 0 else max(1.0, abs(inner.tx_ratio))
+        inner.spin = 0.0
+        inner.spin_ratio = flip_ratio
+        inner.tilt_x = 0.0
+        inner.tilt_y = 0.0
+        inner.tx_ratio = flip_ratio
+        inner.ty_ratio = 0.0
+        inner.precession_ratio = COIN_PRECESS_RATIO
+        inner.offset = (0.0, 0.0, 0.0)
 
     # --------- Tempo helpers ---------
     def bar_omega(self):
@@ -530,12 +681,22 @@ class GoGoGyroDesktop:
         # Apply slider values
         for ring, controls in zip(self.rings, self.ring_controls):
             ring.R = ring.base_radius * controls['size'].value
-            ring.speed_scale = controls['speed'].value
+            target_speed = controls['speed'].value
+            ring.speed_scale += (target_speed - ring.speed_scale) * min(1.0, SPEED_SMOOTHING * dt)
             ring.thickness_scale = controls['thickness'].value
-            tone = (controls['color'].value % 360.0) / 360.0
-            ring.hue = GOLD_HUE + (tone - 0.5) * GOLD_HUE_RANGE
-            ring.saturation = self._clamp01(GOLD_SAT - GOLD_SAT_RANGE * (tone - 0.5))
-            ring.value = self._clamp01(GOLD_VAL + GOLD_VAL_RANGE * (tone - 0.5))
+            bands_val = int(round(controls['bands'].value))
+            bands_val = max(2, min(5, bands_val))
+            palette_val = int(round(controls['palette'].value))
+            palette_val = max(0, min(len(PALETTE_PRESETS) - 1, palette_val))
+            if controls['bands'].value != bands_val:
+                controls['bands'].value = float(bands_val)
+            if controls['palette'].value != palette_val:
+                controls['palette'].value = float(palette_val)
+
+            if ring.band_count != bands_val or ring.palette_index != palette_val:
+                ring.band_count = bands_val
+                ring.palette_index = palette_val
+                ring.refresh_band_colors()
 
         # Enforce inner rings not exceeding size or speed vs. outer neighbor.
         for idx, (ring, controls) in enumerate(zip(self.rings, self.ring_controls)):
@@ -585,37 +746,63 @@ class GoGoGyroDesktop:
         # Draw from back to front for better occlusion.
         segments.sort(key=lambda s: s[0])
 
-        base_color = ring.current_color()
         base_thickness = max(1.0, self.base_thickness * thickness_scale * ring.thickness_scale)
         thickness_px = max(1, int(base_thickness))
         glow_thickness_px = max(1, int(thickness_px * 2.2))
 
         clamp255 = lambda v: max(0, min(255, int(v)))
 
-        for _, mid, _, x0, y0, x1, y1 in segments:
+        for _, mid, idx, x0, y0, x1, y1 in segments:
             depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, mid[2]))  # [-1,1] -> [0,1]
             light = max(0.0, self._dot(self._normalize(mid), self.light_dir))
             shade = 0.7 + 0.2 * depth_mix + 0.25 * light
+            seg_color = ring.segment_color(idx)
 
             alpha = self.back_alpha + (self.front_alpha - self.back_alpha) * depth_mix + alpha_boost
             alpha = max(0.0, min(1.0, alpha))
             rgba = (
-                clamp255(base_color[0] * shade * 255),
-                clamp255(base_color[1] * shade * 255),
-                clamp255(base_color[2] * shade * 255),
+                clamp255(seg_color[0] * shade * 255),
+                clamp255(seg_color[1] * shade * 255),
+                clamp255(seg_color[2] * shade * 255),
                 int(alpha * 255),
             )
 
             glow_a = min(1.0, self.glow_alpha * (0.8 + 0.6 * depth_mix) * glow_scale)
             glow_color = (
-                clamp255(base_color[0] * shade * 255),
-                clamp255(base_color[1] * shade * 255),
-                clamp255(base_color[2] * shade * 255),
+                clamp255(seg_color[0] * shade * 255),
+                clamp255(seg_color[1] * shade * 255),
+                clamp255(seg_color[2] * shade * 255),
                 int(glow_a * 255),
             )
 
             pygame.draw.line(glow_surface, glow_color, (x0, y0), (x1, y1), glow_thickness_px)
             pygame.draw.line(surface, rgba, (x0, y0), (x1, y1), thickness_px)
+
+            tube_offset = max(0.6, thickness_px * 0.45)
+            edge_line = self._offset_line(x0, y0, x1, y1, -tube_offset)
+            highlight_line = self._offset_line(x0, y0, x1, y1, tube_offset)
+            edge_shade = shade * 0.65
+            edge_alpha = alpha * 0.7
+            edge_color = (
+                clamp255(seg_color[0] * edge_shade * 255),
+                clamp255(seg_color[1] * edge_shade * 255),
+                clamp255(seg_color[2] * edge_shade * 255),
+                int(edge_alpha * 255),
+            )
+            highlight_mix = 0.35 + 0.45 * light
+            highlight_shade = shade * 0.85
+            highlight_color = (
+                clamp255((seg_color[0] * (1.0 - highlight_mix) + highlight_mix) * highlight_shade * 255),
+                clamp255((seg_color[1] * (1.0 - highlight_mix) + highlight_mix) * highlight_shade * 255),
+                clamp255((seg_color[2] * (1.0 - highlight_mix) + highlight_mix) * highlight_shade * 255),
+                int(min(1.0, alpha * (0.6 + 0.4 * light) + 0.05) * 255),
+            )
+            if edge_line:
+                pygame.draw.line(surface, edge_color, (edge_line[0], edge_line[1]),
+                                 (edge_line[2], edge_line[3]), max(1, int(thickness_px * 0.55)))
+            if highlight_line:
+                pygame.draw.line(surface, highlight_color, (highlight_line[0], highlight_line[1]),
+                                 (highlight_line[2], highlight_line[3]), max(1, int(thickness_px * 0.5)))
 
         glyph_thickness = max(1, int(thickness_px * 0.7))
         for _, mid, idx, x0, y0, x1, y1 in segments:
@@ -627,10 +814,11 @@ class GoGoGyroDesktop:
             light = max(0.0, self._dot(self._normalize(mid), self.light_dir))
             shade = 0.9 + 0.2 * depth_mix + 0.2 * light
             alpha = min(1.0, self.front_alpha + alpha_boost + 0.2)
+            seg_color = ring.segment_color(idx)
             glyph_color = (
-                clamp255(base_color[0] * shade * 255 + 15),
-                clamp255(base_color[1] * shade * 255 + 15),
-                clamp255(base_color[2] * shade * 255 + 15),
+                clamp255(seg_color[0] * shade * 255 + 15),
+                clamp255(seg_color[1] * shade * 255 + 15),
+                clamp255(seg_color[2] * shade * 255 + 15),
                 int(alpha * 255),
             )
             pygame.draw.line(surface, glyph_color, (x0, y0), (x1, y1), glyph_thickness)
@@ -731,7 +919,7 @@ class GoGoGyroDesktop:
                 r,
                 thickness_scale=thickness_scale,
                 alpha_boost=alpha_boost,
-                glow_scale=glow_scale
+                glow_scale=glow_scale,
             )
 
         self.draw_aux_node(layer, glow_layer)
@@ -760,8 +948,12 @@ class GoGoGyroDesktop:
             self.screen.blit(text, (panel_rect.left + 18, 60 + i * 18))
 
         self._draw_buttons()
+        self._draw_ring_tabs()
 
-        for idx, (ring, controls) in enumerate(zip(self.rings, self.ring_controls)):
+        if self.rings and self.ring_controls:
+            self.active_ring_idx = max(0, min(self.active_ring_idx, len(self.rings) - 1))
+            ring = self.rings[self.active_ring_idx]
+            controls = self.ring_controls[self.active_ring_idx]
             section_top = controls['section_top']
             block_height = controls.get('block_height', 160)
             top = section_top
@@ -775,24 +967,35 @@ class GoGoGyroDesktop:
             pygame.draw.rect(self.screen, (24, 24, 28), container_rect, border_radius=10)
             pygame.draw.rect(self.screen, (70, 70, 82), container_rect, 2, border_radius=10)
 
-            header = self.font.render(f"Ring {idx + 1}", True, (210, 210, 225))
+            header = self.font.render(f"Ring {self.active_ring_idx + 1}", True, (210, 210, 225))
             self.screen.blit(header, (container_rect.left + 10, top + 6))
 
             controls['size'].draw(self.screen, self.font_small)
             controls['speed'].draw(self.screen, self.font_small)
             controls['thickness'].draw(self.screen, self.font_small)
-            controls['color'].draw(self.screen, self.font_small)
+            controls['bands'].draw(self.screen, self.font_small)
+            controls['palette'].draw(self.screen, self.font_small)
 
-            # Draw a color swatch next to the hue slider for quick reference.
-            swatch_rect = pygame.Rect(
-                controls['color'].rect.right + 12,
-                controls['color'].rect.centery - 12,
-                24,
-                24
-            )
-            swatch_color = tuple(int(c * 255) for c in ring.current_color())
-            pygame.draw.rect(self.screen, swatch_color, swatch_rect)
-            pygame.draw.rect(self.screen, (230, 230, 230), swatch_rect, 2)
+            palette_name = PALETTE_PRESETS[max(0, min(ring.palette_index, len(PALETTE_PRESETS) - 1))][0]
+            label = self.font_small.render(palette_name, True, (180, 180, 200))
+            label_rect = label.get_rect()
+            label_rect.topleft = (controls['palette'].rect.right + 12, controls['palette'].rect.top - 2)
+            self.screen.blit(label, label_rect)
+
+            palette_colors = ring.band_colors or []
+            if not palette_colors:
+                ring.refresh_band_colors()
+                palette_colors = ring.band_colors
+            swatch_w = 20
+            swatch_h = 8
+            swatch_gap = 2
+            total_h = len(palette_colors) * (swatch_h + swatch_gap) - swatch_gap
+            start_y = controls['palette'].rect.centery - total_h * 0.5
+            swatch_x = controls['palette'].rect.right + 12
+            for i, color in enumerate(palette_colors):
+                rect = pygame.Rect(swatch_x, int(start_y + i * (swatch_h + swatch_gap)), swatch_w, swatch_h)
+                pygame.draw.rect(self.screen, tuple(int(c * 255) for c in color), rect)
+                pygame.draw.rect(self.screen, (230, 230, 230), rect, 1)
 
     def _draw_buttons(self):
         mouse_pos = pygame.mouse.get_pos()
@@ -810,10 +1013,37 @@ class GoGoGyroDesktop:
             label_rect = label.get_rect(center=rect.center)
             self.screen.blit(label, label_rect)
 
+    def _draw_ring_tabs(self):
+        mouse_pos = pygame.mouse.get_pos()
+        for tab in self.ring_tabs:
+            rect = tab['rect']
+            active = tab['index'] == self.active_ring_idx
+            hovered = rect.collidepoint(mouse_pos)
+            base = (34, 36, 46)
+            border = (90, 96, 112)
+            if active:
+                base = (60, 64, 78)
+                border = (150, 160, 178)
+            elif hovered:
+                base = (44, 48, 62)
+                border = (120, 132, 150)
+            pygame.draw.rect(self.screen, base, rect, border_radius=6)
+            pygame.draw.rect(self.screen, border, rect, 2, border_radius=6)
+            label = self.font_small.render(f"{tab['index'] + 1}", True, (220, 222, 230))
+            label_rect = label.get_rect(center=rect.center)
+            self.screen.blit(label, label_rect)
+
     def _handle_button_click(self, pos):
         for btn in self.buttons:
             if btn['rect'].collidepoint(pos):
                 btn['action']()
+                return True
+        return False
+
+    def _handle_tab_click(self, pos):
+        for tab in self.ring_tabs:
+            if tab['rect'].collidepoint(pos):
+                self.active_ring_idx = tab['index']
                 return True
         return False
 
@@ -826,10 +1056,21 @@ class GoGoGyroDesktop:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self._handle_button_click(event.pos):
                 return
-
-        for slider in self.all_sliders:
-            if slider.handle_event(event):
+            if self._handle_tab_click(event.pos):
                 return
+
+        if self.ring_controls:
+            self.active_ring_idx = max(0, min(self.active_ring_idx, len(self.ring_controls) - 1))
+            controls = self.ring_controls[self.active_ring_idx]
+            for slider in (
+                controls['size'],
+                controls['speed'],
+                controls['thickness'],
+                controls['bands'],
+                controls['palette'],
+            ):
+                if slider.handle_event(event):
+                    return
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
@@ -870,8 +1111,33 @@ def main():
                         help='Seconds to run before exiting (useful for headless testing).')
     args = parser.parse_args()
 
-    app = GoGoGyroDesktop(args.width, args.height)
-    app.run(duration=args.duration)
+    if pygame is None:
+        _report_launch_error(
+            "GoGoGyroDesktop could not start because pygame is not available.\n"
+            "Install it with: python -m pip install pygame\n"
+            f"Import error: {_PYGAME_IMPORT_ERROR}"
+        )
+        return
+
+    try:
+        pygame.display.init()
+    except Exception as exc:
+        _report_launch_error(
+            "GoGoGyroDesktop could not open a display.\n"
+            "If you are running in WSL or over SSH, start an X server or run from a local shell.\n"
+            f"Display error: {exc}"
+        )
+        return
+
+    try:
+        app = GoGoGyroDesktop(args.width, args.height)
+        app.run(duration=args.duration)
+    except Exception as exc:
+        _report_launch_error(
+            "GoGoGyroDesktop failed to start.\n"
+            "Run from a terminal to see the full traceback.\n"
+            f"Error: {exc}"
+        )
 
 
 if __name__ == '__main__':

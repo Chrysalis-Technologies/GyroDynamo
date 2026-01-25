@@ -11,6 +11,7 @@ CORE_GLOW = (0.62, 0.8, 1.0)
 RING_GOLD = (0.93, 0.76, 0.30)
 ACCENT_TEAL = (0.18, 0.74, 0.7)
 GOLD_HUE, GOLD_SAT, GOLD_VAL = colorsys.rgb_to_hsv(*RING_GOLD)
+COIN_PRECESS_RATIO = 0.12
 
 
 # 3D rotation helpers
@@ -32,6 +33,19 @@ def rot_z(p, a):
     return (x * ca - y * sa, x * sa + y * ca, z)
 
 
+def offset_line(x0, y0, x1, y1, offset):
+    dx = x1 - x0
+    dy = y1 - y0
+    length = math.hypot(dx, dy)
+    if length < 1e-6:
+        return None
+    nx = -dy / length
+    ny = dx / length
+    return (x0 + nx * offset, y0 + ny * offset,
+            x1 + nx * offset, y1 + ny * offset)
+
+
+
 class GyroRing:
     def __init__(self, radius, color, n_points=240,
                  spin_ratio=1, tx_ratio=1, ty_ratio=1, offset=None):
@@ -46,8 +60,12 @@ class GyroRing:
         self.hue = h
         self.saturation = s
         self.value = v
+        self.band_count = random.randint(2, 5)
+        self.band_phase = random.randrange(self.n)
+        self.band_colors = []
         self.glyph_stride = random.choice([9, 11, 13])
         self.glyph_phase = random.randrange(self.glyph_stride)
+        self.precession_ratio = 0.0
 
         # Orientation state
         self.tilt_x = 0.0
@@ -58,6 +76,7 @@ class GyroRing:
         self.spin_ratio = spin_ratio
         self.tx_ratio = tx_ratio
         self.ty_ratio = ty_ratio
+        self.refresh_band_colors()
 
     def ring_points_3d(self):
         pts = []
@@ -76,6 +95,26 @@ class GyroRing:
     def current_color(self):
         r, g, b = colorsys.hsv_to_rgb(self.hue % 1.0, self.saturation, self.value)
         return (r, g, b)
+
+    def refresh_band_colors(self):
+        self.band_colors = []
+        band_count = max(2, int(self.band_count))
+        for band in range(band_count):
+            band_pos = 0.0 if band_count == 1 else (band / (band_count - 1)) - 0.5
+            hue = (self.hue + band_pos * 0.06) % 1.0
+            sat = max(0.0, min(1.0, self.saturation * (1.0 - abs(band_pos) * 0.15)))
+            val = max(0.0, min(1.0, self.value * (1.0 + band_pos * 0.28)))
+            self.band_colors.append(colorsys.hsv_to_rgb(hue, sat, val))
+
+    def segment_color(self, idx):
+        if not self.band_colors:
+            self.refresh_band_colors()
+        n = max(1, self.n)
+        offset_idx = (idx + self.band_phase) % n
+        band = int((offset_idx / n) * self.band_count)
+        if band >= self.band_count:
+            band = self.band_count - 1
+        return self.band_colors[band]
 
 
 class GyroPulse:
@@ -180,9 +219,10 @@ class GyroPulse:
         return ring
 
     def _init_rings(self):
-        base_radii = [1.06, 0.84, 0.62, 0.44]
+        base_radii = [1.06]
         for idx, r in enumerate(base_radii):
             self.rings.append(self._make_ring(idx, r))
+        self._lock_inner_ring()
 
     def _reindex_rings(self):
         # Ensure order from outermost to innermost based on current radii.
@@ -198,6 +238,24 @@ class GyroPulse:
             ring.hue, ring.saturation, ring.value = h, s, v
             ring.base_radius = ring.R
             ring.speed_scale = 1.0
+            ring.refresh_band_colors()
+        self._lock_inner_ring()
+
+    def _lock_inner_ring(self):
+        if not self.rings:
+            return
+        for ring in self.rings:
+            ring.precession_ratio = 0.0
+        inner = self.rings[-1]
+        flip_ratio = abs(inner.spin_ratio) if abs(inner.spin_ratio) > 0 else max(1.0, abs(inner.tx_ratio))
+        inner.spin = 0.0
+        inner.spin_ratio = flip_ratio
+        inner.tilt_x = 0.0
+        inner.tilt_y = 0.0
+        inner.tx_ratio = flip_ratio
+        inner.ty_ratio = 0.0
+        inner.precession_ratio = COIN_PRECESS_RATIO
+        inner.offset = (0.0, 0.0, 0.0)
 
     def add_ring(self):
         max_rings = 12
@@ -322,7 +380,7 @@ class GyroPulse:
             phase = base_omega * self.elapsed
             ring.spin = ring.spin_ratio * ring.speed_scale * phase
             ring.tilt_x = ring.tx_ratio * ring.speed_scale * phase
-            ring.tilt_y = ring.ty_ratio * ring.speed_scale * phase
+            ring.tilt_y = (ring.ty_ratio + ring.precession_ratio) * ring.speed_scale * phase
 
         # Camera parallax drift
         orbit_t = self.elapsed * self.cam_orbit_speed
@@ -344,35 +402,61 @@ class GyroPulse:
             segments.append((z_avg, mid, i, x0, y0, x1, y1))
         segments.sort(key=lambda s: s[0])
 
-        base_color = ring.current_color()
         base_thickness = max(1.0, self.base_thickness * thickness_scale * ring.thickness_scale)
         thickness_px = max(1, int(base_thickness))
         glow_thickness_px = max(1, int(thickness_px * 2.2))
 
         clamp255 = lambda v: max(0, min(255, int(v)))
-        for _, mid, _, x0, y0, x1, y1 in segments:
+        for _, mid, idx, x0, y0, x1, y1 in segments:
             depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, mid[2]))  # [-1,1] -> [0,1]
             light = max(0.0, self._dot(self._normalize(mid), self.light_dir))
             shade = 0.7 + 0.2 * depth_mix + 0.25 * light
             alpha = self.back_alpha + (self.front_alpha - self.back_alpha) * depth_mix + alpha_boost
             alpha = max(0.0, min(1.0, alpha))
+            seg_color = ring.segment_color(idx)
             rgba = (
-                clamp255(base_color[0] * shade * 255),
-                clamp255(base_color[1] * shade * 255),
-                clamp255(base_color[2] * shade * 255),
+                clamp255(seg_color[0] * shade * 255),
+                clamp255(seg_color[1] * shade * 255),
+                clamp255(seg_color[2] * shade * 255),
                 int(alpha * 255),
             )
 
             glow_a = min(1.0, self.glow_alpha * (0.8 + 0.6 * depth_mix) * glow_scale)
             glow_color = (
-                clamp255(base_color[0] * shade * 255),
-                clamp255(base_color[1] * shade * 255),
-                clamp255(base_color[2] * shade * 255),
+                clamp255(seg_color[0] * shade * 255),
+                clamp255(seg_color[1] * shade * 255),
+                clamp255(seg_color[2] * shade * 255),
                 int(glow_a * 255),
             )
 
             pygame.draw.line(glow_surface, glow_color, (x0, y0), (x1, y1), glow_thickness_px)
             pygame.draw.line(surface, rgba, (x0, y0), (x1, y1), thickness_px)
+
+            tube_offset = max(0.6, thickness_px * 0.45)
+            edge_line = offset_line(x0, y0, x1, y1, -tube_offset)
+            highlight_line = offset_line(x0, y0, x1, y1, tube_offset)
+            edge_shade = shade * 0.65
+            edge_alpha = alpha * 0.7
+            edge_color = (
+                clamp255(seg_color[0] * edge_shade * 255),
+                clamp255(seg_color[1] * edge_shade * 255),
+                clamp255(seg_color[2] * edge_shade * 255),
+                int(edge_alpha * 255),
+            )
+            highlight_mix = 0.35 + 0.45 * light
+            highlight_shade = shade * 0.85
+            highlight_color = (
+                clamp255((seg_color[0] * (1.0 - highlight_mix) + highlight_mix) * highlight_shade * 255),
+                clamp255((seg_color[1] * (1.0 - highlight_mix) + highlight_mix) * highlight_shade * 255),
+                clamp255((seg_color[2] * (1.0 - highlight_mix) + highlight_mix) * highlight_shade * 255),
+                int(min(1.0, alpha * (0.6 + 0.4 * light) + 0.05) * 255),
+            )
+            if edge_line:
+                pygame.draw.line(surface, edge_color, (edge_line[0], edge_line[1]),
+                                 (edge_line[2], edge_line[3]), max(1, int(thickness_px * 0.55)))
+            if highlight_line:
+                pygame.draw.line(surface, highlight_color, (highlight_line[0], highlight_line[1]),
+                                 (highlight_line[2], highlight_line[3]), max(1, int(thickness_px * 0.5)))
 
         glyph_thickness = max(1, int(thickness_px * 0.7))
         for _, mid, idx, x0, y0, x1, y1 in segments:
@@ -384,10 +468,11 @@ class GyroPulse:
             light = max(0.0, self._dot(self._normalize(mid), self.light_dir))
             shade = 0.9 + 0.2 * depth_mix + 0.2 * light
             alpha = min(1.0, self.front_alpha + alpha_boost + 0.2)
+            seg_color = ring.segment_color(idx)
             glyph_color = (
-                clamp255(base_color[0] * shade * 255 + 15),
-                clamp255(base_color[1] * shade * 255 + 15),
-                clamp255(base_color[2] * shade * 255 + 15),
+                clamp255(seg_color[0] * shade * 255 + 15),
+                clamp255(seg_color[1] * shade * 255 + 15),
+                clamp255(seg_color[2] * shade * 255 + 15),
                 int(alpha * 255),
             )
             pygame.draw.line(surface, glyph_color, (x0, y0), (x1, y1), glyph_thickness)
