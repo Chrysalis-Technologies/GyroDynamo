@@ -2,7 +2,7 @@
 setlocal
 
 set "ROOT=%~dp0"
-set "PY=%ROOT%.venv-win\Scripts\python.exe"
+set "PY=%ROOT%..\.venv-win\Scripts\python.exe"
 set "SCRIPT=%ROOT%GoGoGyroDesktopAligned.py"
 
 if not exist "%PY%" (

@@ -3,7 +3,9 @@
 
 set -euo pipefail
 
-OUTPUT_FILE="recon_output.json"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTPUT_FILE="$SCRIPT_DIR/recon_output.json"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 VERBOSE=false
 FORMAT="json"
 
@@ -19,7 +21,7 @@ Commands:
   all <target>        Run all modules
   help                Show this help
 Options:
-  -o <file>           Output file (default: recon_output.json)
+  -o <file>           Output file (default: recon_output.json next to script)
   -v                  Verbose mode
   -f <format>         Output format: json, md, txt (default: json)
 USAGE
@@ -123,7 +125,7 @@ gather_ssl() {
 write_output() {
   case "$FORMAT" in
     json)
-      python3 - <<PY
+      "$PYTHON_BIN" - <<PY
 import json, pathlib
 out = {
   "target": "$target",

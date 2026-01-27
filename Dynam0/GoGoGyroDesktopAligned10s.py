@@ -13,7 +13,9 @@ ACCENT_TEAL = (0.18, 0.74, 0.7)
 
 TARGET_BPM = 84
 BEATS_PER_MEASURE = 8
-ALIGN_INTERVAL_BARS = 4
+ALIGN_INTERVAL_SECONDS = 10.0
+ALIGN_INTERVAL_BARS = (ALIGN_INTERVAL_SECONDS * TARGET_BPM) / (BEATS_PER_MEASURE * 60.0)
+OUTER_DIAMETER_FILL = 0.75
 
 
 def rot_x(p, a):
@@ -37,7 +39,7 @@ def rot_z(p, a):
 class Ring:
     def __init__(self, radius, color, n_points,
                  spin_ratio, tx_ratio, ty_ratio,
-                 band_count=3, axis_angle=0.0):
+                 band_count=3, axis_angle=0.0, thickness_scale=1.0):
         self.R = radius
         self.color = color
         self.n = n_points
@@ -45,6 +47,7 @@ class Ring:
         self.tx_ratio = tx_ratio
         self.ty_ratio = ty_ratio
         self.axis_angle = axis_angle
+        self.thickness_scale = max(0.5, float(thickness_scale))
         self.spin = 0.0
         self.tilt_x = 0.0
         self.tilt_y = 0.0
@@ -108,7 +111,7 @@ class GoGoGyroAligned:
     def __init__(self, width=900, height=900):
         pygame.init()
         self.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
-        pygame.display.set_caption("GoGoGyro Aligned")
+        pygame.display.set_caption("GoGoGyro Aligned 10s")
         self.clock = pygame.time.Clock()
         self.font_small = pygame.font.SysFont(None, 18)
 
@@ -118,11 +121,19 @@ class GoGoGyroAligned:
         self.cam_dist = 3.8
         self.focal_len = 1.0
         self.light_dir = self._normalize((0.2, 0.35, 1.0))
-        self.base_thickness = 3.0
+        self.base_thickness = 8.0
         self.back_alpha = 0.35
         self.front_alpha = 0.98
-        self.glow_alpha = 0.14
+        self.glow_alpha = 0.22
         self.align_width = 0.07
+        self.core_spin_rate = 0.9
+        self.sweep_speed = 0.09
+        self.sweep_strength = 0.45
+        self.sweep_tint = (0.3, 0.9, 1.0)
+        self.specular_strength = 0.4
+        self.specular_width = 0.05
+        self.breath_rate = 0.08
+        self.breath_depth = 0.22
 
         self.bg_top = (6, 8, 16)
         self.bg_bottom = (10, 14, 26)
@@ -133,7 +144,7 @@ class GoGoGyroAligned:
         self.height = height
         self.cx = width * 0.5
         self.cy = height * 0.5
-        self.scale_px = min(width, height) * 0.48
+        self.visual_fill = OUTER_DIAMETER_FILL
         self.bg_surface = None
         self._build_background()
 
@@ -143,6 +154,15 @@ class GoGoGyroAligned:
             (0.60, 240, 9, 5, 0, 4, -28),
             (0.38, 210, 11, 6, 0, 4, 36),
         ]
+        ring_palette = [
+            (0.93, 0.76, 0.30),
+            (0.24, 0.84, 0.82),
+            (0.96, 0.52, 0.26),
+            (0.62, 0.74, 0.98),
+        ]
+        ring_thickness = [1.4, 1.3, 1.22, 1.16]
+        self.outer_radius = max(spec[0] for spec in ring_specs)
+        self.scale_px = self._calc_scale()
         tones = [1.0, 0.95, 0.9, 0.85]
         self.rings = []
         for idx, (radius, n_points, spin_ratio, tx_ratio, ty_ratio,
@@ -151,8 +171,9 @@ class GoGoGyroAligned:
             spin_ratio *= dir_sign
             tx_ratio *= dir_sign
             ty_ratio *= dir_sign
+            base_color = ring_palette[idx % len(ring_palette)]
             tone = tones[idx % len(tones)]
-            color = tuple(min(1.0, c * tone) for c in RING_GOLD)
+            color = tuple(min(1.0, c * tone) for c in base_color)
             self.rings.append(
                 Ring(
                     radius,
@@ -163,6 +184,7 @@ class GoGoGyroAligned:
                     ty_ratio=ty_ratio,
                     band_count=band_count,
                     axis_angle=math.radians(axis_angle_deg),
+                    thickness_scale=ring_thickness[idx % len(ring_thickness)],
                 )
             )
 
@@ -177,6 +199,10 @@ class GoGoGyroAligned:
     @staticmethod
     def _dot(a, b):
         return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+    def _calc_scale(self):
+        min_dim = min(self.width, self.height)
+        return min_dim * (self.visual_fill * 0.5) * (self.cam_dist / self.outer_radius)
 
     @staticmethod
     def _offset_line(x0, y0, x1, y1, offset):
@@ -251,11 +277,17 @@ class GoGoGyroAligned:
             segments.append((z_avg, mid, i, x0, y0, x1, y1))
         segments.sort(key=lambda s: s[0])
 
-        base_thickness = max(1.0, self.base_thickness * thickness_scale)
+        ring_thickness = thickness_scale * ring.thickness_scale
+        base_thickness = max(1.0, self.base_thickness * ring_thickness)
         thickness_px = max(1, int(base_thickness))
-        glow_thickness_px = max(1, int(thickness_px * 2.2))
+        glow_thickness_px = max(1, int(thickness_px * 3.0))
 
         clamp255 = lambda v: max(0, min(255, int(v)))
+        n = max(1, ring.n)
+        two_pi = 2.0 * math.pi
+        sweep_time = self.elapsed * self.sweep_speed
+        phase_offset = ring.band_phase / n
+        specular_center = (ring.spin / two_pi + phase_offset) % 1.0
         for _, mid, idx, x0, y0, x1, y1 in segments:
             depth_mix = 0.5 + 0.5 * max(-1.0, min(1.0, mid[2]))
             light = max(0.0, self._dot(self._normalize(mid), self.light_dir))
@@ -263,13 +295,38 @@ class GoGoGyroAligned:
             alpha = self.back_alpha + (self.front_alpha - self.back_alpha) * depth_mix + alpha_boost
             alpha = max(0.0, min(1.0, alpha))
             seg_color = ring.segment_color(idx)
+            pos = idx / n
+            sweep_phase = (pos + sweep_time + phase_offset) % 1.0
+            sweep = 0.5 + 0.5 * math.sin(two_pi * sweep_phase)
+            sweep = sweep ** 1.6
+            sweep_mix = self.sweep_strength * sweep
+            if sweep_mix > 0.0:
+                seg_color = (
+                    seg_color[0] * (1.0 - sweep_mix) + self.sweep_tint[0] * sweep_mix,
+                    seg_color[1] * (1.0 - sweep_mix) + self.sweep_tint[1] * sweep_mix,
+                    seg_color[2] * (1.0 - sweep_mix) + self.sweep_tint[2] * sweep_mix,
+                )
+            specular_dist = abs(pos - specular_center)
+            if specular_dist > 0.5:
+                specular_dist = 1.0 - specular_dist
+            specular = max(0.0, 1.0 - specular_dist / max(1e-6, self.specular_width))
+            specular = (specular ** 4.0) * self.specular_strength * (0.65 + 0.35 * light)
+            if specular > 0.0:
+                highlight_mix = min(1.0, specular * 0.45)
+                seg_color = (
+                    seg_color[0] * (1.0 - highlight_mix) + highlight_mix,
+                    seg_color[1] * (1.0 - highlight_mix) + highlight_mix,
+                    seg_color[2] * (1.0 - highlight_mix) + highlight_mix,
+                )
+            shade = min(1.5, shade + specular * 0.7)
+            alpha = min(1.0, alpha + specular * 0.2)
             rgba = (
                 clamp255(seg_color[0] * shade * 255),
                 clamp255(seg_color[1] * shade * 255),
                 clamp255(seg_color[2] * shade * 255),
                 int(alpha * 255),
             )
-            glow_a = min(1.0, self.glow_alpha * (0.8 + 0.6 * depth_mix) * glow_scale)
+            glow_a = min(1.0, self.glow_alpha * (0.8 + 0.6 * depth_mix) * glow_scale + specular * 0.12)
             glow_color = (
                 clamp255(seg_color[0] * shade * 255),
                 clamp255(seg_color[1] * shade * 255),
@@ -345,15 +402,22 @@ class GoGoGyroAligned:
             radius = max(1, int(radius_px * (1.0 - 0.09 * i)))
             pygame.draw.circle(sphere, tint_rgb + (alpha,), center, radius)
 
-        highlight_col = (255, 255, 255, 150)
-        pygame.draw.circle(
-            sphere,
-            highlight_col,
-            (int(radius_px * 0.42), int(radius_px * 0.42)),
-            int(radius_px * 0.32),
-        )
-
         surface.blit(sphere, (self.cx - radius_px, self.cy - radius_px))
+
+        spin_angle = self.elapsed * self.core_spin_rate
+        highlight_col = (255, 255, 255, 150)
+        highlight_radius = int(radius_px * 0.32)
+        orbit_gap = max(2.0, radius_px * 0.02)
+        orbit_radius = radius_px + highlight_radius + orbit_gap
+        pygame.draw.circle(
+            surface,
+            highlight_col,
+            (
+                int(self.cx + math.cos(spin_angle) * orbit_radius),
+                int(self.cy + math.sin(spin_angle) * orbit_radius),
+            ),
+            highlight_radius,
+        )
         glow_rgb = tuple(int(c * 255) for c in self.core_glow_color)
         for scale, alpha in ((1.6, 160), (2.2, 90), (2.9, 50)):
             pygame.draw.circle(
@@ -377,7 +441,8 @@ class GoGoGyroAligned:
         measure_pulse = self.pulse(mph, sharpness=2.5)
         align_dist = min(aph, 1.0 - aph)
         align_pulse = max(0.0, 1.0 - align_dist / max(0.0001, self.align_width)) ** 3.2
-        thickness_scale = 1.0 + 0.25 * measure_pulse + 0.9 * align_pulse
+        breath = math.sin(2.0 * math.pi * self.breath_rate * self.elapsed)
+        thickness_scale = 1.0 + 0.25 * measure_pulse + 0.9 * align_pulse + self.breath_depth * breath
         alpha_boost = 0.08 * measure_pulse + 0.7 * align_pulse
         glow_scale = 1.0 + 2.8 * align_pulse
 
@@ -402,7 +467,7 @@ class GoGoGyroAligned:
         self.height = max(400, height)
         self.cx = self.width * 0.5
         self.cy = self.height * 0.5
-        self.scale_px = min(self.width, self.height) * 0.48
+        self.scale_px = self._calc_scale()
         self._build_background()
 
     def handle_event(self, event):
@@ -434,7 +499,7 @@ class GoGoGyroAligned:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Aligned ring variant (no UI controls)")
+    parser = argparse.ArgumentParser(description="Aligned ring variant (10s align, no UI controls)")
     parser.add_argument('--width', type=int, default=900)
     parser.add_argument('--height', type=int, default=900)
     parser.add_argument('--duration', type=float, default=None,

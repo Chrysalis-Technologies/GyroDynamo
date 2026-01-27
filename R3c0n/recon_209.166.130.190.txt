@@ -1,0 +1,49 @@
+Reconnaissance Report for 209.166.130.190
+=== Scan ===
+nmap/masscan not installed
+=== DNS ===
+# dig A
+dig not installed
+
+# dig MX
+dig not installed
+
+# dig NS
+dig not installed
+
+# dig TXT
+dig not installed
+
+# Reverse PTR
+dig not installed
+
+# whois
+whois not installed
+
+=== Subdomains ===
+subfinder/amass not installed
+=== Web ===
+# Headers for http://209.166.130.190
+HTTP/1.1 200 OK
+Content-Length: 6920
+Content-Type: text/html
+Last-Modified: Sat, 08 Dec 2018 22:48:12 GMT
+Accept-Ranges: bytes
+ETag: "05ef918488fd41:0"
+Server: Microsoft-IIS/10.0
+X-Powered-By: ASP.NET
+Date: Mon, 26 Jan 2026 22:00:18 GMT
+
+
+
+# Wayback URLs for http://209.166.130.190
+waybackurls not installed
+
+# Headers for https://209.166.130.190
+
+
+# Wayback URLs for https://209.166.130.190
+waybackurls not installed
+
+=== SSL ===
+openssl not installed

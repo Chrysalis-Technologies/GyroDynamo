@@ -11,7 +11,8 @@ from pathlib import Path
 # Auto-sized viewBox (no clipping ever)
 # ============================================================
 
-OUT_FILE = Path("life_calendar_age_105_colored.svg")
+SCRIPT_DIR = Path(__file__).resolve().parent
+OUT_FILE = SCRIPT_DIR / "life_calendar_age_105_colored.svg"
 
 # -----------------------
 # Calendar constants

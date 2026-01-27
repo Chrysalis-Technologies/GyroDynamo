@@ -52,3 +52,40 @@ recon.sh [command] [options]
 ```
 
 The output file will contain the results in the chosen format. JSON output contains raw command results to allow further parsing.
+
+## Step 2 summary (recon_step2.py)
+
+`recon_step2.py` converts `recon_*.json` outputs into a checklist summary. It can also emit JSON for downstream automation.
+
+```
+python R3c0n/recon_step2.py [paths...] -f <format> -o <file> [--pretty]
+```
+
+Formats: `text`, `md`, `json` (default: text). If a directory is provided, it will summarize all `recon_*.json` files inside it.
+
+Examples:
+
+```bash
+python R3c0n/recon_step2.py R3c0n/recon_example.json
+python R3c0n/recon_step2.py R3c0n/ -f json -o recon_summaries.json --pretty
+```
+
+## Orchestrator (recon_orchestrator.py)
+
+`recon_orchestrator.py` runs `recon.sh all` and then summarizes with `recon_step2.py`.
+
+Defaults:
+- Recon output: `R3c0n/recon_<target>.json`
+- Summary output: `R3c0n/recon_<target>_summary.<ext>` (based on `--summary-format`)
+
+```
+python R3c0n/recon_orchestrator.py <target> [--output <file>] [--summary <file>] [--summary-format <fmt>] [--summary-pretty]
+```
+
+Examples:
+
+```bash
+python R3c0n/recon_orchestrator.py example.com
+python R3c0n/recon_orchestrator.py example.com --summary-format json --summary-pretty
+python R3c0n/recon_orchestrator.py example.com --output /tmp/recon.json --summary /tmp/recon_summary.json --summary-format json
+```

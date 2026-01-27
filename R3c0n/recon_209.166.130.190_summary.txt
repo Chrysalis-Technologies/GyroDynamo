@@ -1,0 +1,10 @@
+Target: 
+Source: C:\Users\PaulMarzocchi\Vivarium\GyroDynamo\R3c0n\recon_209.166.130.190.json
+Open services: (none detected in scan output)
+Subdomains found: none / tool missing
+Web endpoints with headers: none / tool missing
+
+Checklist:
+- DNS: MX records not present in output.
+- DNS: NS records not present in output.
+- DNS: TXT records not present in output.
