@@ -81,8 +81,8 @@ class GyroPulseScene(scene.Scene):
         self.align_width = 0.05  # fraction of cycle for flash
         self.elapsed = 0.0
         self.paused = False
-        self.zoom = 1.0
-        self.base_thickness = 2.4
+        self.zoom = 1.25
+        self.base_thickness = 2.4 * 1.8
         self.bg_top = (0.02, 0.03, 0.05)
         self.bg_bottom = (0.04, 0.05, 0.09)
         self.core_color = CORE_COLOR
@@ -120,7 +120,10 @@ class GyroPulseScene(scene.Scene):
         return ring
 
     def _init_rings(self):
-        for idx, r in enumerate([1.0, 0.8, 0.62, 0.46]):
+        base_outer = 1.0
+        outer_growth = 1.22
+        radii = [base_outer * (outer_growth ** i) for i in range(5)]
+        for idx, r in enumerate(radii):
             self.rings.append(self._make_ring(idx, r))
         self._layout_buttons()
 
