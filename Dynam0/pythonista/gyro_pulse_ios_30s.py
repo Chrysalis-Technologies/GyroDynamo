@@ -81,8 +81,8 @@ class GyroPulseScene(scene.Scene):
         self.align_width = 0.05  # fraction of cycle for flash
         self.elapsed = 0.0
         self.paused = False
-        self.zoom = 1.0
-        self.base_thickness = 2.4
+        self.zoom = 1.25
+        self.base_thickness = 2.4 * 1.8
         self.bg_top = (0.02, 0.03, 0.05)
         self.bg_bottom = (0.04, 0.05, 0.09)
         self.core_color = CORE_COLOR
@@ -120,7 +120,10 @@ class GyroPulseScene(scene.Scene):
         return ring
 
     def _init_rings(self):
-        for idx, r in enumerate([1.0, 0.8, 0.62, 0.46]):
+        base_outer = 1.0
+        outer_growth = 1.22
+        radii = [base_outer * (outer_growth ** i) for i in range(5)]
+        for idx, r in enumerate(radii):
             self.rings.append(self._make_ring(idx, r))
         self._layout_buttons()
 
@@ -158,26 +161,28 @@ class GyroPulseScene(scene.Scene):
     def _build_buttons(self):
         labels = ['+', 'O+', '-', 'T-', 'T+', 'Z-', 'Z+']
         actions = ['add_inner', 'add_outer', 'remove_ring', 'period_down', 'period_up', 'zoom_out', 'zoom_in']
-        x = 14
+        x = 18
         for lbl, act in zip(labels, actions):
-            self.buttons.append({'rect': ui.Rect(x, 12, 52, 30), 'label': lbl, 'action': act})
-            x += 56
+            self.buttons.append({'rect': ui.Rect(x, 12, 44, 44), 'label': lbl, 'action': act})
+            x += 48
 
     def _layout_buttons(self):
-        # Place the button bar near the bottom (assumes scene origin top-left in Pythonista).
-        bar_h = 30
+        # Place bubble buttons as a vertical strip on the left side.
         margin = 10
-        y = max(margin, self.size.h - bar_h - margin)
-        for btn in self.buttons:
-            r = btn['rect']
-            btn['rect'] = ui.Rect(r.x, y, r.width, r.height)
+        bubble = 44
+        spacing = 10
+        total_h = len(self.buttons) * bubble + max(0, len(self.buttons) - 1) * spacing
+        y = max(margin, (self.size.h - total_h) * 0.5)
+        for idx, btn in enumerate(self.buttons):
+            btn['rect'] = ui.Rect(margin, y + idx * (bubble + spacing), bubble, bubble)
 
     def _hit_button(self, touch):
         pt = (touch.location.x, touch.location.y)
         for btn in self.buttons:
             r = btn['rect']
-            rx, ry, rw, rh = r.x, r.y, r.width, r.height
-            if (rx <= pt[0] <= rx + rw) and (ry <= pt[1] <= ry + rh):
+            cx, cy = r.x + r.width * 0.5, r.y + r.height * 0.5
+            radius = min(r.width, r.height) * 0.5
+            if math.hypot(pt[0] - cx, pt[1] - cy) <= radius:
                 return btn['action']
         return None
 
@@ -348,12 +353,18 @@ class GyroPulseScene(scene.Scene):
         # HUD buttons
         for btn in self.buttons:
             rect = btn['rect']
-            scene.fill(0.1, 0.12, 0.16, 0.75)
-            scene.stroke(0.45, 0.48, 0.55, 0.9)
+            cx_btn = rect.x + rect.w * 0.5
+            cy_btn = rect.y + rect.h * 0.5
+            rad_btn = min(rect.w, rect.h) * 0.5
+            scene.no_stroke()
+            scene.fill(0.2, 0.42, 0.5, 0.18)
+            scene.ellipse(cx_btn - rad_btn * 1.25, cy_btn - rad_btn * 1.25, rad_btn * 2.5, rad_btn * 2.5)
+            scene.fill(0.08, 0.11, 0.16, 0.82)
+            scene.stroke(0.55, 0.88, 0.98, 0.95)
             scene.stroke_weight(1)
-            scene.rect(rect.x, rect.y, rect.w, rect.h)
-            scene.fill(0.9, 0.9, 0.95, 1.0)
-            scene.text(btn['label'], 'Helvetica', 12, rect.x + rect.w * 0.5, rect.y + rect.h * 0.38, 5)
+            scene.ellipse(rect.x, rect.y, rect.w, rect.h)
+            scene.fill(0.95, 0.98, 1.0, 1.0)
+            scene.text(btn['label'], 'Helvetica-Bold', 12, cx_btn, rect.y + rect.h * 0.36, 5)
 
         # HUD text
         info = f"{len(self.rings)} rings • align {self.reset_period:.1f}s • zoom {self.zoom:.2f}"

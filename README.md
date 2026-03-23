@@ -143,6 +143,7 @@ Requirements
 	?	No additional packages. Open the script in Pythonista and run.
 
 Notes & limits
+<<<<<<< HEAD
 	?	Z?ordering is by ring index; there?s no depth test or shading, by design (simple and fast).
 	?	Higher SEGMENTS improves smoothness but costs CPU; tune for your device.
 	?	To add an audible click each beat, call sound.play_effect('ui:click3') where the beat pulse is triggered.
@@ -475,3 +476,27 @@ Do not expose command execution over an unauthenticated remote service.
 
 
 
+=======
+	•	Z‑ordering is by ring index; there’s no depth test or shading, by design (simple and fast).
+	•	Higher SEGMENTS improves smoothness but costs CPU; tune for your device.
+	•	To add an audible click each beat, call sound.play_effect('ui:click3') where the beat pulse is triggered.
+
+## Swift SceneKit desktop prototype
+
+A standalone macOS SceneKit prototype for one nested gyro ring stack is available at:
+
+- `SwiftPrototype/GyroRingStackPrototype.swift`
+
+Build/run on macOS:
+
+```bash
+cd SwiftPrototype
+swiftc GyroRingStackPrototype.swift -framework Cocoa -framework SceneKit -framework QuartzCore -o GyroRingStackPrototype
+./GyroRingStackPrototype
+```
+
+Notes:
+- Uses nested `SCNTorus` geometry for ring stack visuals.
+- Adds independent ring spin animations and a slow global precession.
+- Enables mouse camera orbit (`allowsCameraControl = true`) for quick visual inspection.
+>>>>>>> eec47662a5d3cb67d020948c9d2dbeb9b85402c9
