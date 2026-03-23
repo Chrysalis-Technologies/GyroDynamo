@@ -4,3 +4,9 @@ scans/
 tools/
 recon_*.json
 209.166.130.190.txt
+
+# GyroUniverse local secrets/config
+.env
+.env.audacity
+Dynam0/.env
+Dynam0/universe.local.json

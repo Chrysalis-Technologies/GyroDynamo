@@ -1,0 +1,90 @@
+{
+  "ha": {
+    "url": "http://100.93.213.68:8123",
+    "token_env": "HA_TOKEN",
+    "context_entity": "input_select.gyrodynamo_galaxy",
+    "poll_interval_s": 1.5,
+    "timeout_s": 5.0
+  },
+  "render": {
+    "window": {
+      "width": 1400,
+      "height": 900
+    },
+    "layout": "grid",
+    "max_rings_per_planet": 10,
+    "outer_radius": 1.05,
+    "inner_radius": 0.38,
+    "radial_padding": 1.28,
+    "max_fps": 60,
+    "stream_fps": 10,
+    "target_bpm": 84.0,
+    "beats_per_measure": 8.0,
+    "align_interval_bars": 4.0
+  },
+  "galaxies": {
+    "farm": {
+      "title": "Farm Galaxy",
+      "systems": [
+        {
+          "id": "chickens",
+          "name": "Chickens",
+          "loops_entity": "input_number.loops_farm_chickens",
+          "base_color": [
+            0.93,
+            0.76,
+            0.3
+          ]
+        },
+        {
+          "id": "sheep",
+          "name": "Sheep",
+          "loops_entity": "input_number.loops_farm_sheep",
+          "base_color": [
+            0.24,
+            0.84,
+            0.82
+          ]
+        },
+        {
+          "id": "cows",
+          "name": "Cows",
+          "loops_entity": "input_number.loops_farm_cows",
+          "base_color": [
+            0.62,
+            0.74,
+            0.98
+          ]
+        }
+      ]
+    },
+    "family": {
+      "title": "Family Galaxy",
+      "systems": []
+    },
+    "work": {
+      "title": "Work Galaxy",
+      "systems": []
+    },
+    "home": {
+      "title": "Home Galaxy",
+      "systems": []
+    },
+    "admin": {
+      "title": "Admin Galaxy",
+      "systems": []
+    },
+    "personal": {
+      "title": "Personal Galaxy",
+      "systems": []
+    },
+    "infrastructure": {
+      "title": "Infrastructure Galaxy",
+      "systems": []
+    },
+    "other": {
+      "title": "Other Galaxy",
+      "systems": []
+    }
+  }
+}
