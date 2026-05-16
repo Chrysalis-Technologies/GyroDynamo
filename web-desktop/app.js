@@ -29,6 +29,11 @@ const DEFAULT_SETTINGS = Object.freeze({
   hapticMotionThresholdDegrees: 30,
   hapticCooldownMs: 500,
   orientationMode: "free",
+  ringCount: 5,
+  spinSpeed: 1,
+  gyroScale: 1,
+  wobble: 0.35,
+  visualShake: 0,
 });
 
 const TRAIL_LIMITS = Object.freeze({
@@ -187,6 +192,11 @@ class SettingsStore {
       deadZoneDegrees: clamp(settings.deadZoneDegrees, 0, 5),
       hapticMotionThresholdDegrees: clamp(settings.hapticMotionThresholdDegrees, 1, 180),
       hapticCooldownMs: clamp(settings.hapticCooldownMs, 100, 5000),
+      ringCount: Math.round(clamp(settings.ringCount, 1, 12)),
+      spinSpeed: clamp(settings.spinSpeed, 0, 3),
+      gyroScale: clamp(settings.gyroScale, 0.55, 1.45),
+      wobble: clamp(settings.wobble, 0, 2),
+      visualShake: clamp(settings.visualShake, 0, 1),
     };
   }
 }
@@ -432,7 +442,7 @@ class DesktopInputSensorManager {
   stop() {
     this.desiredStart = false;
     this.detach();
-    this.publish(SENSOR_STATE.NOT_STARTED, "Tap Start Desktop Input to use pointer, keyboard, or gamepad control.");
+    this.publish(SENSOR_STATE.NOT_STARTED, "Rig controls work now. Start Desktop Input when you want pointer, keyboard, or gamepad control.");
   }
 
   pause() {
@@ -644,7 +654,6 @@ class GyroRenderer {
     this.dpr = 1;
     this.elapsed = 0;
     this.lastTimestamp = performance.now();
-    this.radii = [1.0, 0.8, 0.62, 0.46, 0.34];
     window.addEventListener("resize", () => this.resize());
     this.resize();
   }
@@ -667,17 +676,22 @@ class GyroRenderer {
     const theme = THEMES[renderState.settings.theme] ?? THEMES.neon;
     this.drawBackground(theme);
 
-    const center = { x: this.width * 0.5, y: this.height * 0.46 };
+    const settings = renderState.settings;
     const minDimension = Math.min(this.width, this.height);
-    const projectionScale = minDimension * 0.42;
+    const shake = settings.visualShake ?? 0;
+    const center = {
+      x: (this.width * 0.5) + (Math.sin(this.elapsed * 39.5) * minDimension * 0.004 * shake),
+      y: (this.height * 0.46) + (Math.cos(this.elapsed * 33.25) * minDimension * 0.004 * shake),
+    };
+    const projectionScale = minDimension * 0.42 * settings.gyroScale;
     const orientation = renderState.displayOrientation;
-    const basePhase = (Math.PI * 2 * this.elapsed) / 30;
+    const basePhase = ((Math.PI * 2 * this.elapsed) / 30) * settings.spinSpeed;
 
     this.renderAxisMarkers(center, projectionScale, orientation, theme);
     this.renderTrails(center, projectionScale, trailSamples, theme);
-    this.renderGyroRings(center, projectionScale, orientation, basePhase, theme);
-    this.renderMotionIndicator(center, projectionScale, orientation, theme);
-    this.renderHub(center, minDimension, theme);
+    this.renderGyroRings(center, projectionScale, orientation, basePhase, theme, settings);
+    this.renderMotionIndicator(center, projectionScale, orientation, theme, settings);
+    this.renderHub(center, minDimension, theme, settings);
   }
 
   drawBackground(theme) {
@@ -688,16 +702,27 @@ class GyroRenderer {
     this.ctx.fillRect(0, 0, this.width, this.height);
   }
 
-  renderGyroRings(center, projectionScale, orientation, basePhase, theme) {
-    this.radii.forEach((radius, index) => {
+  renderGyroRings(center, projectionScale, orientation, basePhase, theme, settings) {
+    const ringCount = Math.round(clamp(settings.ringCount, 1, 12));
+    const wobble = settings.wobble ?? 0;
+    const shake = settings.visualShake ?? 0;
+    const radii = buildRingRadii(ringCount);
+
+    radii.forEach((radius, index) => {
       const sign = index % 2 === 0 ? 1 : -1;
-      const spin = sign * basePhase * (index + 1);
-      const tiltX = sign * basePhase * (index + 1) * 0.72;
-      const tiltY = sign * basePhase * (index + 2) * 0.52;
+      const wobblePhase = this.elapsed * (0.82 + index * 0.09) + index * 0.74;
+      const wobbleTilt = radians(8 * wobble);
+      const pulse = 1 + (Math.sin(this.elapsed * 8.4 + index) * 0.018 * shake);
+      const spin = (sign * basePhase * (index + 1) * (0.82 + index * 0.045))
+        + (Math.sin(wobblePhase) * 0.14 * wobble);
+      const tiltX = (sign * basePhase * (index + 1) * 0.72)
+        + (Math.sin(wobblePhase + 0.4) * wobbleTilt);
+      const tiltY = (sign * basePhase * (index + 2) * 0.52)
+        + (Math.cos(wobblePhase + 0.9) * wobbleTilt);
       const color = index % 2 === 0 ? theme.ringPrimary : theme.ringSecondary;
       this.renderDepthRing({
         center,
-        radius,
+        radius: radius * pulse,
         projectionScale,
         spin,
         tiltX,
@@ -705,6 +730,7 @@ class GyroRenderer {
         orientation,
         color,
         theme,
+        lineWeightMultiplier: 1 + wobble * 0.04 + shake * 0.16,
         segmentCount: Math.max(96, Math.floor(radius * 180)),
         glyphStride: [9, 11, 13][index % 3],
         glyphPhase: index * 4,
@@ -733,7 +759,9 @@ class GyroRenderer {
         if (frontPass !== depth >= 0.52) continue;
 
         const alpha = frontPass ? 0.38 + depth * 0.56 : 0.08 + depth * 0.18;
-        const lineWidth = config.theme.lineWeight * (frontPass ? 0.8 + depth * 0.88 : 0.38 + depth * 0.36);
+        const lineWidth = config.theme.lineWeight
+          * config.lineWeightMultiplier
+          * (frontPass ? 0.8 + depth * 0.88 : 0.38 + depth * 0.36);
         this.strokeSegment(start, end, config.color, alpha, lineWidth);
 
         if (frontPass && (index + config.glyphPhase) % config.glyphStride === 0) {
@@ -790,25 +818,27 @@ class GyroRenderer {
     });
   }
 
-  renderMotionIndicator(center, projectionScale, orientation, theme) {
+  renderMotionIndicator(center, projectionScale, orientation, theme, settings) {
     const point = orientationIndicatorPoint(orientation, 0.86);
     const projected = project(point, center, projectionScale, 1);
+    const pulse = 1 + Math.sin(this.elapsed * 11.5) * 0.18 * (settings.visualShake ?? 0);
     this.ctx.save();
     this.ctx.shadowColor = theme.accent;
     this.ctx.shadowBlur = 18;
     this.ctx.fillStyle = colorToRgba(theme.accent, 0.25);
     this.ctx.beginPath();
-    this.ctx.arc(projected.x, projected.y, 14, 0, Math.PI * 2);
+    this.ctx.arc(projected.x, projected.y, 14 * pulse, 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.fillStyle = colorToRgba(theme.accent, 0.92);
     this.ctx.beginPath();
-    this.ctx.arc(projected.x, projected.y, 5.5, 0, Math.PI * 2);
+    this.ctx.arc(projected.x, projected.y, 5.5 * pulse, 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.restore();
   }
 
-  renderHub(center, minDimension, theme) {
-    const radius = Math.max(14, minDimension * 0.026);
+  renderHub(center, minDimension, theme, settings) {
+    const pulse = 1 + Math.sin(this.elapsed * 9.2) * 0.07 * (settings.visualShake ?? 0);
+    const radius = Math.max(14, minDimension * 0.026) * pulse;
     this.ctx.save();
     this.ctx.shadowColor = theme.accent;
     this.ctx.shadowBlur = 18 * theme.glowIntensity;
@@ -873,6 +903,14 @@ function project(point, center, projectionScale, depthRadius) {
   };
 }
 
+function buildRingRadii(count) {
+  if (count <= 1) return [1];
+  return Array.from({ length: count }, (_, index) => {
+    const t = index / Math.max(1, count - 1);
+    return 1 - t * 0.68;
+  });
+}
+
 function orientationIndicatorPoint(orientation, radius) {
   let point = { x: 0, y: -radius, z: 0 };
   point = rotateX(point, radians(orientation.pitch));
@@ -893,7 +931,7 @@ class GyroApp {
     this.sensorStatus = {
       state: SENSOR_STATE.NOT_STARTED,
       source: "unavailable",
-      message: "Tap Start Desktop Input to use pointer, keyboard, or gamepad control.",
+      message: "Rig controls work now. Start Desktop Input when you want pointer, keyboard, or gamepad control.",
       updateIntervalMs: 16.7,
     };
     this.lastSample = null;
@@ -943,6 +981,7 @@ class GyroApp {
       hudTheme: document.getElementById("hudTheme"),
       hudTrail: document.getElementById("hudTrail"),
       hudOrientationMode: document.getElementById("hudOrientationMode"),
+      hudRig: document.getElementById("hudRig"),
       hudHaptics: document.getElementById("hudHaptics"),
       hudDebug: document.getElementById("hudDebug"),
       hudRaw: document.getElementById("hudRaw"),
@@ -969,6 +1008,22 @@ class GyroApp {
       debugHudToggle: document.getElementById("debugHudToggle"),
       hapticsToggle: document.getElementById("hapticsToggle"),
       motionHapticsToggle: document.getElementById("motionHapticsToggle"),
+      rigSummary: document.getElementById("rigSummary"),
+      removeRingButton: document.getElementById("removeRingButton"),
+      addRingButton: document.getElementById("addRingButton"),
+      decelerateButton: document.getElementById("decelerateButton"),
+      accelerateButton: document.getElementById("accelerateButton"),
+      resetRigButton: document.getElementById("resetRigButton"),
+      ringCountSlider: document.getElementById("ringCountSlider"),
+      spinSpeedSlider: document.getElementById("spinSpeedSlider"),
+      gyroScaleSlider: document.getElementById("gyroScaleSlider"),
+      wobbleSlider: document.getElementById("wobbleSlider"),
+      visualShakeSlider: document.getElementById("visualShakeSlider"),
+      ringCountOutput: document.getElementById("ringCountOutput"),
+      spinSpeedOutput: document.getElementById("spinSpeedOutput"),
+      gyroScaleOutput: document.getElementById("gyroScaleOutput"),
+      wobbleOutput: document.getElementById("wobbleOutput"),
+      visualShakeOutput: document.getElementById("visualShakeOutput"),
       hapticThresholdSlider: document.getElementById("hapticThresholdSlider"),
       hapticCooldownSlider: document.getElementById("hapticCooldownSlider"),
       hapticThresholdOutput: document.getElementById("hapticThresholdOutput"),
@@ -1010,8 +1065,19 @@ class GyroApp {
     this.bindSlider("sensitivity", this.elements.sensitivitySlider, this.elements.sensitivityOutput, (value) => value.toFixed(1));
     this.bindSlider("smoothing", this.elements.smoothingSlider, this.elements.smoothingOutput, (value) => value.toFixed(2));
     this.bindSlider("deadZoneDegrees", this.elements.deadZoneSlider, this.elements.deadZoneOutput, (value) => `${value.toFixed(1)}°`);
+    this.bindSlider("ringCount", this.elements.ringCountSlider, this.elements.ringCountOutput, (value) => `${Math.round(value)}`);
+    this.bindSlider("spinSpeed", this.elements.spinSpeedSlider, this.elements.spinSpeedOutput, (value) => `${value.toFixed(1)}x`);
+    this.bindSlider("gyroScale", this.elements.gyroScaleSlider, this.elements.gyroScaleOutput, (value) => value.toFixed(2));
+    this.bindSlider("wobble", this.elements.wobbleSlider, this.elements.wobbleOutput, (value) => value.toFixed(2));
+    this.bindSlider("visualShake", this.elements.visualShakeSlider, this.elements.visualShakeOutput, (value) => value.toFixed(2));
     this.bindSlider("hapticMotionThresholdDegrees", this.elements.hapticThresholdSlider, this.elements.hapticThresholdOutput, (value) => `${value.toFixed(0)}°`);
     this.bindSlider("hapticCooldownMs", this.elements.hapticCooldownSlider, this.elements.hapticCooldownOutput, (value) => `${value.toFixed(0)} ms`);
+
+    this.elements.removeRingButton.addEventListener("click", () => this.adjustRigSetting("ringCount", -1));
+    this.elements.addRingButton.addEventListener("click", () => this.adjustRigSetting("ringCount", 1));
+    this.elements.decelerateButton.addEventListener("click", () => this.adjustRigSetting("spinSpeed", -0.1));
+    this.elements.accelerateButton.addEventListener("click", () => this.adjustRigSetting("spinSpeed", 0.1));
+    this.elements.resetRigButton.addEventListener("click", () => this.resetRigControls());
 
     this.elements.showHudToggle.addEventListener("change", (event) => {
       this.updateSetting("showHUD", event.target.checked);
@@ -1056,8 +1122,33 @@ class GyroApp {
     slider.addEventListener("input", (event) => {
       const value = Number(event.target.value);
       this.updateSetting(key, value);
-      output.textContent = formatter(value);
+      output.textContent = formatter(this.settings[key]);
+      if (["ringCount", "spinSpeed", "gyroScale", "wobble", "visualShake"].includes(key)) {
+        this.syncRigControls();
+      }
     });
+  }
+
+  adjustRigSetting(key, delta) {
+    this.updateSetting(key, Number(this.settings[key]) + delta);
+    this.syncRigControls();
+    this.haptics.selection();
+  }
+
+  resetRigControls() {
+    this.settings = this.store.clampSettings({
+      ...this.settings,
+      ringCount: DEFAULT_SETTINGS.ringCount,
+      spinSpeed: DEFAULT_SETTINGS.spinSpeed,
+      gyroScale: DEFAULT_SETTINGS.gyroScale,
+      wobble: DEFAULT_SETTINGS.wobble,
+      visualShake: DEFAULT_SETTINGS.visualShake,
+    });
+    this.renderState.settings = this.settings;
+    this.store.save(this.settings);
+    this.syncRigControls();
+    this.haptics.modeChanged();
+    this.updateUI();
   }
 
   applySettingsToControls() {
@@ -1067,6 +1158,11 @@ class GyroApp {
     this.elements.sensitivitySlider.value = this.settings.sensitivity;
     this.elements.smoothingSlider.value = this.settings.smoothing;
     this.elements.deadZoneSlider.value = this.settings.deadZoneDegrees;
+    this.elements.ringCountSlider.value = this.settings.ringCount;
+    this.elements.spinSpeedSlider.value = this.settings.spinSpeed;
+    this.elements.gyroScaleSlider.value = this.settings.gyroScale;
+    this.elements.wobbleSlider.value = this.settings.wobble;
+    this.elements.visualShakeSlider.value = this.settings.visualShake;
     this.elements.hapticThresholdSlider.value = this.settings.hapticMotionThresholdDegrees;
     this.elements.hapticCooldownSlider.value = this.settings.hapticCooldownMs;
     this.elements.showHudToggle.checked = this.settings.showHUD;
@@ -1076,8 +1172,23 @@ class GyroApp {
     this.elements.sensitivityOutput.textContent = this.settings.sensitivity.toFixed(1);
     this.elements.smoothingOutput.textContent = this.settings.smoothing.toFixed(2);
     this.elements.deadZoneOutput.textContent = `${this.settings.deadZoneDegrees.toFixed(1)}°`;
+    this.syncRigControls();
     this.elements.hapticThresholdOutput.textContent = `${this.settings.hapticMotionThresholdDegrees.toFixed(0)}°`;
     this.elements.hapticCooldownOutput.textContent = `${this.settings.hapticCooldownMs.toFixed(0)} ms`;
+  }
+
+  syncRigControls() {
+    this.elements.ringCountSlider.value = this.settings.ringCount;
+    this.elements.spinSpeedSlider.value = this.settings.spinSpeed;
+    this.elements.gyroScaleSlider.value = this.settings.gyroScale;
+    this.elements.wobbleSlider.value = this.settings.wobble;
+    this.elements.visualShakeSlider.value = this.settings.visualShake;
+    this.elements.ringCountOutput.textContent = `${this.settings.ringCount}`;
+    this.elements.spinSpeedOutput.textContent = `${this.settings.spinSpeed.toFixed(1)}x`;
+    this.elements.gyroScaleOutput.textContent = this.settings.gyroScale.toFixed(2);
+    this.elements.wobbleOutput.textContent = this.settings.wobble.toFixed(2);
+    this.elements.visualShakeOutput.textContent = this.settings.visualShake.toFixed(2);
+    this.elements.rigSummary.textContent = `${this.settings.ringCount} rings · spin ${this.settings.spinSpeed.toFixed(1)}x`;
   }
 
   updateSetting(key, value) {
@@ -1130,7 +1241,7 @@ class GyroApp {
     this.handleStatus({
       state: SENSOR_STATE.NOT_STARTED,
       source: "unavailable",
-      message: "Tap Start Desktop Input to use pointer, keyboard, or gamepad control.",
+      message: "Rig controls work now. Start Desktop Input when you want pointer, keyboard, or gamepad control.",
       updateIntervalMs: 16.7,
     });
     console.info("Desktop Gyro Visualizer input stop requested.");
@@ -1255,13 +1366,15 @@ class GyroApp {
     this.elements.hudTheme.textContent = `Theme: ${theme.title}`;
     this.elements.hudTrail.textContent = `Trail: ${this.titleFor("trailLength", this.settings.trailLength)}`;
     this.elements.hudOrientationMode.textContent = `Orient: ${this.titleFor("orientationMode", this.normalizer.activeMode)}`;
+    this.elements.hudRig.textContent = `Rig: ${this.settings.ringCount} rings · ${this.settings.spinSpeed.toFixed(1)}x`;
     this.elements.hudHaptics.textContent = `Haptics: ${this.haptics.availabilityText()}`;
     this.elements.hudRaw.textContent = formatOrientation("Raw", this.renderState.rawOrientation);
     this.elements.hudCalibrated.textContent = formatOrientation("Cal", this.renderState.calibratedOrientation);
     this.elements.hudSmoothed.textContent = formatOrientation("Smooth", this.renderState.smoothedOrientation);
     this.elements.hudDiagnostics.textContent = this.diagnosticsLine();
 
-    this.elements.drawerStatus.textContent = `${title} · ${theme.title} · ${this.titleFor("trailLength", this.settings.trailLength)} trails`;
+    this.elements.rigSummary.textContent = `${this.settings.ringCount} rings · spin ${this.settings.spinSpeed.toFixed(1)}x`;
+    this.elements.drawerStatus.textContent = `${title} · ${theme.title} · ${this.titleFor("trailLength", this.settings.trailLength)} trails · ${this.settings.ringCount} rings`;
     this.elements.drawerStartStopButton.textContent = [SENSOR_STATE.ACTIVE, SENSOR_STATE.DEMO].includes(this.sensorStatus.state)
       ? "Stop Input"
       : "Start Input";
@@ -1283,7 +1396,7 @@ class GyroApp {
   diagnosticsLine() {
     const age = this.lastSample ? `${Math.round(performance.now() - this.lastSample.timestamp)} ms` : "n/a";
     const late = this.lastSample && performance.now() - this.lastSample.timestamp > this.sensorStatus.updateIntervalMs * 4 ? "late" : "ok";
-    return `src ${this.sensorStatus.source} · interval ${this.sensorStatus.updateIntervalMs.toFixed(1)} ms · age ${age} · ${late} · haptics ${this.haptics.adapterType}`;
+    return `src ${this.sensorStatus.source} · interval ${this.sensorStatus.updateIntervalMs.toFixed(1)} ms · age ${age} · ${late} · rig ${this.settings.ringCount}/${this.settings.spinSpeed.toFixed(1)}x · haptics ${this.haptics.adapterType}`;
   }
 
   installVisibilityHandlers() {

@@ -36,7 +36,7 @@
           </button>
         </div>
         <p class="startup-note">
-          Desktop mode uses pointer, keyboard, and optional gamepad input. Demo Mode works anywhere.
+          Rig controls work immediately. Start input only when you want pointer, keyboard, or gamepad control.
         </p>
       </section>
 
@@ -56,6 +56,7 @@
             <span id="hudTheme">Theme: Neon</span>
             <span id="hudTrail">Trail: Short</span>
             <span id="hudOrientationMode">Orient: Free</span>
+            <span id="hudRig">Rig: 5 rings · 1.0x</span>
             <span id="hudHaptics">Haptics: unavailable</span>
           </div>
           <div id="hudDebug" class="hud-debug mono" hidden>
@@ -119,6 +120,44 @@
             <label><input id="hapticsToggle" type="checkbox" /> Haptics</label>
             <label><input id="motionHapticsToggle" type="checkbox" /> Motion haptics</label>
           </div>
+
+          <section class="rig-panel" aria-label="Gyro rig controls">
+            <div class="panel-title-row">
+              <strong>Rig Controls</strong>
+              <span id="rigSummary">5 rings · spin 1.0x</span>
+            </div>
+
+            <div class="rig-action-grid">
+              <button id="removeRingButton" type="button">- Ring</button>
+              <button id="addRingButton" type="button">+ Ring</button>
+              <button id="decelerateButton" type="button">Decel</button>
+              <button id="accelerateButton" type="button">Accel</button>
+              <button id="resetRigButton" type="button">Reset Rig</button>
+            </div>
+
+            <div class="slider-grid">
+              <label>
+                <span>Rings <output id="ringCountOutput">5</output></span>
+                <input id="ringCountSlider" type="range" min="1" max="12" step="1" />
+              </label>
+              <label>
+                <span>Spin <output id="spinSpeedOutput">1.0x</output></span>
+                <input id="spinSpeedSlider" type="range" min="0" max="3" step="0.1" />
+              </label>
+              <label>
+                <span>Scale <output id="gyroScaleOutput">1.00</output></span>
+                <input id="gyroScaleSlider" type="range" min="0.55" max="1.45" step="0.01" />
+              </label>
+              <label>
+                <span>Wobble <output id="wobbleOutput">0.35</output></span>
+                <input id="wobbleSlider" type="range" min="0" max="2" step="0.01" />
+              </label>
+              <label>
+                <span>Shake <output id="visualShakeOutput">0.00</output></span>
+                <input id="visualShakeSlider" type="range" min="0" max="1" step="0.01" />
+              </label>
+            </div>
+          </section>
 
           <details class="advanced-panel">
             <summary>Advanced</summary>
