@@ -362,6 +362,47 @@ output {
   background: rgba(255, 255, 255, 0.055);
 }
 
+.rig-panel {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ring-primary), transparent 94%);
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+}
+
+.panel-title-row strong {
+  font-size: 0.82rem;
+}
+
+.panel-title-row span {
+  color: color-mix(in srgb, var(--text), transparent 26%);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.72rem;
+}
+
+.rig-action-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rig-action-grid button {
+  min-height: 40px;
+  padding-inline: 8px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
 .advanced-panel summary {
   min-height: 34px;
   color: color-mix(in srgb, var(--text), transparent 14%);
@@ -390,6 +431,14 @@ output {
 
   .button-row button {
     font-size: 0.82rem;
+  }
+
+  .rig-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rig-action-grid button:last-child {
+    grid-column: 1 / -1;
   }
 }
 
