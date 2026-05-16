@@ -1,0 +1,31 @@
+{
+  "name": "Desktop Gyro Visualizer",
+  "short_name": "Desktop Gyro",
+  "description": "Desktop gyroscope visualizer with pointer, keyboard, gamepad, calibration, smoothing, themes, HUD, trails, and demo mode.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#020610",
+  "theme_color": "#06101d",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

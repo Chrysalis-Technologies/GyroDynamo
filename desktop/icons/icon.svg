@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Desktop Gyro Visualizer icon">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="74%">
+      <stop offset="0%" stop-color="#15345c"/>
+      <stop offset="60%" stop-color="#06101d"/>
+      <stop offset="100%" stop-color="#01040d"/>
+    </radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g fill="none" filter="url(#glow)" stroke-linecap="round">
+    <ellipse cx="256" cy="256" rx="168" ry="64" stroke="#19ebff" stroke-width="18" opacity="0.95"/>
+    <ellipse cx="256" cy="256" rx="168" ry="64" stroke="#ff59e0" stroke-width="14" opacity="0.86" transform="rotate(60 256 256)"/>
+    <ellipse cx="256" cy="256" rx="168" ry="64" stroke="#7affc7" stroke-width="14" opacity="0.78" transform="rotate(-58 256 256)"/>
+  </g>
+  <circle cx="256" cy="256" r="35" fill="#ecfbff"/>
+  <circle cx="245" cy="243" r="10" fill="#ffffff" opacity="0.72"/>
+</svg>
