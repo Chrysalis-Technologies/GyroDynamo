@@ -1,0 +1,14 @@
+{
+  "size": "1600x1000",
+  "bpm": 84.0,
+  "rings": 7,
+  "palette": "Solar Forge",
+  "fullscreen": false,
+  "camera_drift": true,
+  "hud": true,
+  "tempo_scale": 1.0,
+  "screenshot_dir": "captures",
+  "backend": "glfw",
+  "beats_per_measure": 8,
+  "align_bars": 4
+}

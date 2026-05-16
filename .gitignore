@@ -10,3 +10,7 @@ recon_*.json
 .env.audacity
 Dynam0/.env
 Dynam0/universe.local.json
+.venv-win-build/
+build/
+dist/
+Dynam0/captures/

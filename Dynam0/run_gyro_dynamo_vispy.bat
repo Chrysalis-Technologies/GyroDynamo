@@ -21,9 +21,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
-"%PY%" -c "import numpy, vispy" >nul 2>&1
+"%PY%" -c "import numpy, vispy, glfw" >nul 2>&1
 if errorlevel 1 (
-  echo [GyroDynamoVisPy] Missing required packages in venv.
+  echo [GyroDynamoDesktop] Missing required packages in venv.
   echo Install them with: .venv-win\Scripts\python.exe -m pip install -r requirements-desktop.txt
   pause
   exit /b 1
