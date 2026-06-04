@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "GyroDynamoWinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "GyroDynamoWinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

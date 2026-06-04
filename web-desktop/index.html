@@ -123,26 +123,38 @@
 
           <section class="rig-panel" aria-label="Gyro rig controls">
             <div class="panel-title-row">
-              <strong>Rig Controls</strong>
-              <span id="rigSummary">5 rings · spin 1.0x</span>
+              <strong>BPM-Aligned Rig</strong>
+              <span id="rigSummary">7 rings · 84 BPM · align 4 bars</span>
             </div>
 
             <div class="rig-action-grid">
               <button id="removeRingButton" type="button">- Ring</button>
               <button id="addRingButton" type="button">+ Ring</button>
-              <button id="decelerateButton" type="button">Decel</button>
-              <button id="accelerateButton" type="button">Accel</button>
+              <button id="decelerateButton" type="button">Tempo -</button>
+              <button id="accelerateButton" type="button">Tempo +</button>
               <button id="resetRigButton" type="button">Reset Rig</button>
             </div>
 
             <div class="slider-grid">
               <label>
-                <span>Rings <output id="ringCountOutput">5</output></span>
-                <input id="ringCountSlider" type="range" min="1" max="12" step="1" />
+                <span>BPM <output id="bpmOutput">84</output></span>
+                <input id="bpmSlider" type="range" min="30" max="220" step="1" />
               </label>
               <label>
-                <span>Spin <output id="spinSpeedOutput">1.0x</output></span>
-                <input id="spinSpeedSlider" type="range" min="0" max="3" step="0.1" />
+                <span>Tempo <output id="tempoScaleOutput">1.00x</output></span>
+                <input id="tempoScaleSlider" type="range" min="0.25" max="3" step="0.05" />
+              </label>
+              <label>
+                <span>Beats / Measure <output id="beatsPerMeasureOutput">8</output></span>
+                <input id="beatsPerMeasureSlider" type="range" min="1" max="16" step="1" />
+              </label>
+              <label>
+                <span>Align Bars <output id="alignBarsOutput">4</output></span>
+                <input id="alignBarsSlider" type="range" min="1" max="16" step="1" />
+              </label>
+              <label>
+                <span>Rings <output id="ringCountOutput">7</output></span>
+                <input id="ringCountSlider" type="range" min="1" max="12" step="1" />
               </label>
               <label>
                 <span>Scale <output id="gyroScaleOutput">1.00</output></span>

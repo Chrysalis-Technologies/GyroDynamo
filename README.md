@@ -114,6 +114,26 @@ dist\GyroDynamoDesktop\GyroDynamoDesktop.exe
 
 Build outputs are ignored by git.
 
+## WinUI Control Shell
+
+A WinUI 3 shell now hosts the desktop web visualizer and drives it through
+native Windows controls:
+
+- Project: `winui\GyroDynamoWinUI\GyroDynamoWinUI.csproj`
+- Hosted renderer: packaged copy of `web-desktop\`
+- Bridge: `window.gyroDynamoWinUiBridge` in `web-desktop\app.js`
+
+Build and launch:
+
+```bat
+dotnet run --project winui\GyroDynamoWinUI\GyroDynamoWinUI.csproj -c Debug -p:Platform=x64
+```
+
+The WinUI shell exposes Start, Demo, Calibrate, Stop, theme/trail/orientation
+selectors, motion tuning sliders, HUD toggles, and a BPM-aligned rig surface.
+The hosted renderer uses the same timing defaults as the desktop config:
+`84 BPM`, `8` beats per measure, and ring/tumble realignment every `4` bars.
+
 ## Tests
 
 Run the focused desktop tests:
